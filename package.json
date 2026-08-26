@@ -1,0 +1,9 @@
+{
+  "name": "mes-aps-core",
+  "private": true,
+  "workspaces": [
+    "aps-engine",
+    "backend",
+    "frontend"
+  ]
+}

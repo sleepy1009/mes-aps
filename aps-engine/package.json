@@ -1,0 +1,12 @@
+{
+  "name": "aps-engine",
+  "version": "1.0.0",
+  "main": "build/Release/aps_engine.node",
+  "gypfile": true,
+  "scripts": {
+    "build": "node-gyp rebuild"
+  },
+  "dependencies": {
+    "node-addon-api": "^7.1.0"
+  }
+}
