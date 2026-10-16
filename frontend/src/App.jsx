@@ -92,7 +92,10 @@ function App() {
                     </div>
                 )}
 
-                <JobDetails refreshTrigger={refreshDataset} />
+                <JobDetails 
+                    refreshTrigger={refreshDataset} 
+                    onDataChanged={handleRunSchedule} 
+                />
 
                 <div className="quadrant">
                     <div className="placeholder-content"> x </div>

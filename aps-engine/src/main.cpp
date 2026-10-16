@@ -17,7 +17,9 @@ std::map<std::string, int> bks_map = {
     {"la01", 666}, {"la02", 655}, {"la03", 597}, {"la04", 590}, {"la05", 593}, // 10x5
     {"la06", 926}, {"la07", 890}, {"la08", 863}, {"la09", 951}, {"la10", 958}, // 15x5
     {"la11", 1222}, {"la12", 1039}, {"la13", 1150}, {"la14", 1292}, {"la15", 1207}, // 20x5
-    {"la16", 945}, {"la17", 784}, {"la18", 848}, {"la19", 842}, {"la20", 902}  // 10x10
+    {"la16", 945}, {"la17", 784}, {"la18", 848}, {"la19", 842}, {"la20", 902}, // 10x10
+    {"la21", 1046}, {"la22", 927}, {"la23", 1032}, {"la24", 935}, {"la25", 977}, // 15x10
+    {"la26", 1218}, {"la27", 1235}, {"la28", 1216}, {"la29", 1152}, {"la30", 1355} // 20x10
 };
 
 std::vector<Operation> readJSSPInstance(const std::string& filepath) {
@@ -69,7 +71,7 @@ int main() {
     // Header
     outfile << "Instance,Num_Runs,BKS,Best_Cmax,Worst_Cmax,Avg_Cmax,Gap_Percent,Avg_Time_ms\n";
     
-    std::cout << "========== BAT DAU BENCHMARK LA01 -> LA20 ==========\n";
+    std::cout << "========== STARTING BENCHMARK LA01 -> LA20 ==========\n";
     std::cout << std::left << std::setw(10) << "Instance" 
               << std::setw(10) << "BKS" 
               << std::setw(10) << "Best" 

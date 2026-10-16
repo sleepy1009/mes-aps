@@ -1,254 +1,271 @@
 /**
  * @file Scheduler.cpp
  * @brief Core Engine for Advanced Planning and Scheduling (APS) using Genetic Algorithm.
- * 
+ *
  * @details
- * Module prevents the "Job Shop Scheduling Problem" (JSSP) with constraints such as:
- * - Sequence-dependent Setup Times.
- * - Due dates & Priorities.
- * 
+ * Job Shop Scheduling Problem (JSSP) with:
+ * - Setup (changeover) time when the machine switches to a different order.
+ * - Due dates & Priorities: tardiness is counted once per order, at its last step.
+ *
  * @architecture
  * - Data Structure: opMatrix O(1) access to Operation by orderId and stepSequence.
- * - Representation: gen encoding of orderId, where the number of appearances = stepSequence.
- * - Crossover: using Precedence Preservation Crossover (POX).
- * 
+ * - Representation: gen encoding of orderId, where the k-th appearance = step k.
+ * - Crossover: Precedence Preservation Crossover (POX).
+ *
  * @execution_flow
- * 0.1. Init: random F0 (initPopulation).
+ * 0.1. Validate input, build opMatrix, init random population.
  * 0.2. Fitness: C_max + Tardiness Penalty (weighted by priority).
- * 0.3. Evolution: Tournament -> POX -> Mutate.
- * 0.4. Decode: convert best chromosome to ScheduledTask with startTime and endTime.
+ * 0.3. Evolution: Elitism -> Tournament -> POX -> Mutate.
+ * 0.4. Decode best chromosome to ScheduledTask with startTime and endTime.
  */
 
 #include "../include/Scheduler.h"
 #include <stdexcept>
+#include <string>
 
 using namespace std;
 
-// 0. setup and run GA
-vector<ScheduledTask> JobShopScheduler::schedule(const vector<Operation>& operations) {
-    if (operations.empty()) return {};
+namespace {
+    constexpr int kMaxId = 1000000; // guard against huge allocations from bad data
+}
 
+JobShopScheduler::JobShopScheduler(const SchedulerConfig& config) : cfg(config) {
+    if (cfg.populationSize < 2) throw invalid_argument("populationSize must be >= 2");
+    if (cfg.maxGenerations < 0) throw invalid_argument("maxGenerations must be >= 0");
+    if (cfg.tournamentSize < 1) throw invalid_argument("tournamentSize must be >= 1");
+    if (cfg.mutationRate < 0.0 || cfg.mutationRate > 1.0) throw invalid_argument("mutationRate must be in [0, 1]");
+
+    unsigned int s = cfg.seed;
+    if (s == 0) {
+        random_device rd;
+        s = rd();
+    }
+    rng.seed(s);
+}
+
+// 0.1 validate input + build opMatrix
+void JobShopScheduler::buildModel(const vector<Operation>& operations) {
     maxOrderId = 0;
     maxMachineId = 0;
-    
-    for (const auto& op : operations) {
-        if (op.orderId > maxOrderId) maxOrderId = op.orderId;
-        if (op.machineId > maxMachineId) maxMachineId = op.machineId;
+
+    for (size_t i = 0; i < operations.size(); ++i) {
+        const Operation& op = operations[i];
+        const string where = "Operation #" + to_string(i) + " (order " + to_string(op.orderId) +
+                             ", step " + to_string(op.stepSequence) + "): ";
+
+        if (op.orderId < 0 || op.orderId > kMaxId) throw invalid_argument(where + "orderId out of range");
+        if (op.machineId < 0 || op.machineId > kMaxId) throw invalid_argument(where + "machineId out of range");
+        if (op.stepSequence <= 0 || op.stepSequence > kMaxId) throw invalid_argument(where + "stepSequence must be >= 1");
+        if (op.processingTimeMinutes < 0) throw invalid_argument(where + "processing time must be >= 0");
+        if (op.setupTimeMinutes < 0) throw invalid_argument(where + "setup time must be >= 0");
+
+        maxOrderId = max(maxOrderId, op.orderId);
+        maxMachineId = max(maxMachineId, op.machineId);
     }
 
     opMatrix.assign(maxOrderId + 1, vector<Operation>());
     for (const auto& op : operations) {
-        if (op.stepSequence <= 0) continue; // invalid
+        vector<Operation>& steps = opMatrix[op.orderId];
+        const size_t idx = static_cast<size_t>(op.stepSequence - 1);
 
-        if (opMatrix[op.orderId].size() < op.stepSequence) opMatrix[op.orderId].resize(op.stepSequence); // id 1, size 2 but step > 2 -> size = step
-
-        opMatrix[op.orderId][op.stepSequence - 1] = op;
-    }
-
-    vector<Chromosome> p = initPopulation(operations); // start 0.1
-    Chromosome bestFitness = p[0];
-
-
-    // 0.3 loop GA
-    for (int gen = 0; gen < maxGenerations; ++gen) {
-        vector<Chromosome> nextGen; 
-        
-        sort(p.begin(), p.end(), [](const Chromosome& a, const Chromosome& b) {
-            return a.fitness < b.fitness;
-        });
-        
-        // Elitism
-        nextGen.push_back(p[0]); 
-        
-        if (p[0].fitness < bestFitness.fitness) bestFitness = p[0];
-
-        while (nextGen.size() < populationSize) {
-            Chromosome p1 = tourSelection(p);
-            Chromosome p2 = tourSelection(p);
-            
-            Chromosome child = crossoverPOX(p1, p2);
-            mutate(child);
-            calFitness(child);
-            
-            nextGen.push_back(child);
+        if (steps.size() <= idx) steps.resize(idx + 1); // new slots have machineId = -1
+        if (steps[idx].machineId != -1) {
+            throw invalid_argument("Order " + to_string(op.orderId) + ": duplicate step " + to_string(op.stepSequence));
         }
-        p = nextGen; 
+        steps[idx] = op;
     }
-    
-    // 0.4 - end, cal schedule from bestFitness
-    vector<ScheduledTask> res;
-    vector<int> mReadyTime(maxMachineId + 1, 0); 
-    vector<int> oReadyTime(maxOrderId + 1, 0);   
-    vector<int> oStepTracker(maxOrderId + 1, 0); 
-    vector<int> lastOrderOnMachine(maxMachineId + 1, -1);
 
-    for (int Id : bestFitness.genes) {
-        int currStep = oStepTracker[Id];
-        
-        if (currStep >= opMatrix[Id].size()) continue; 
-        
-        oStepTracker[Id]++;
-        const Operation& currOp = opMatrix[Id][currStep];
-        if (currOp.machineId == -1) continue;
-
-        int addedSetup = 0;
-        if (lastOrderOnMachine[currOp.machineId] != -1 && lastOrderOnMachine[currOp.machineId] != Id) {
-            addedSetup = currOp.setupTimeMinutes;
+    orderIds.clear();
+    for (int id = 0; id <= maxOrderId; ++id) {
+        const vector<Operation>& steps = opMatrix[id];
+        if (steps.empty()) continue;
+        for (size_t k = 0; k < steps.size(); ++k) {
+            if (steps[k].machineId == -1) {
+                throw invalid_argument("Order " + to_string(id) + ": missing step " + to_string(k + 1));
+            }
         }
-
-        int startTime = max(mReadyTime[currOp.machineId] + addedSetup, oReadyTime[Id]);
-        int endTime = startTime + currOp.processingTimeMinutes;
-
-        mReadyTime[currOp.machineId] = endTime;
-        oReadyTime[Id] = endTime;
-        lastOrderOnMachine[currOp.machineId] = Id;
-
-        ScheduledTask task;
-        task.orderId = Id;
-        task.machineId = currOp.machineId;
-        task.stepSequence = currStep + 1;
-        task.startTime = startTime;
-        task.endTime = endTime;
-        
-        res.push_back(task);
+        orderIds.push_back(id);
     }
 
-    return res;
+    mReadyTime.assign(maxMachineId + 1, 0);
+    lastOrderOnMachine.assign(maxMachineId + 1, -1);
+    oReadyTime.assign(maxOrderId + 1, 0);
+    oStepTracker.assign(maxOrderId + 1, 0);
+    pickedOrder.assign(maxOrderId + 1, 0);
 }
 
-// 0.2 O(1) C_max + Tardiness Penalty
-int JobShopScheduler::calFitness(Chromosome& chrom) {
-    vector<int> mReadyTime(maxMachineId + 1, 0); 
-    vector<int> oReadyTime(maxOrderId + 1, 0);   
-    vector<int> oStepTracker(maxOrderId + 1, 0);
-    vector<int> lastOrderOnMachine(maxMachineId + 1, -1); 
+int JobShopScheduler::setupBefore(int prevOrderOnMachine, const Operation& op) const {
+    if (prevOrderOnMachine == -1 || prevOrderOnMachine == op.orderId) return 0;
+    return op.setupTimeMinutes;
+}
 
-    int makespan = 0;        
-    long long priorityPenalty = 0; 
+int JobShopScheduler::priorityWeight(int priority) const {
+    if (priority >= 3) return cfg.weightPriority3;
+    if (priority == 2) return cfg.weightPriority2;
+    return cfg.weightPriority1;
+}
 
-    for (int Id : chrom.genes) {
-        int currStep = oStepTracker.at(Id);
-        if (currStep >= opMatrix.at(Id).size()) continue;
+// 0.2 / 0.4 genes -> schedule, C_max + Tardiness Penalty. out != nullptr also records the tasks.
+ScheduleStats JobShopScheduler::decode(const vector<int>& genes, vector<ScheduledTask>* out) {
+    fill(mReadyTime.begin(), mReadyTime.end(), 0);
+    fill(lastOrderOnMachine.begin(), lastOrderOnMachine.end(), -1);
+    fill(oReadyTime.begin(), oReadyTime.end(), 0);
+    fill(oStepTracker.begin(), oStepTracker.end(), 0);
 
-        const Operation& currOp = opMatrix.at(Id).at(currStep);
-        oStepTracker.at(Id)++;
-        
-        if (currOp.machineId == -1 || currOp.machineId > maxMachineId) continue;
-        if (currOp.processingTimeMinutes <= 0) continue;
+    ScheduleStats s;
 
-        int addedSetup = 0;
-        if (lastOrderOnMachine.at(currOp.machineId) != -1 && lastOrderOnMachine.at(currOp.machineId) != Id) {
-            addedSetup = currOp.setupTimeMinutes; 
+    for (int id : genes) {
+        const size_t step = static_cast<size_t>(oStepTracker[id]++);
+        if (step >= opMatrix[id].size()) {
+            throw logic_error("decode: chromosome has more genes than steps for order " + to_string(id));
         }
 
-        int startTime = max(mReadyTime.at(currOp.machineId) + addedSetup, oReadyTime.at(Id));
-        int endTime = startTime + currOp.processingTimeMinutes;
+        const Operation& op = opMatrix[id][step];
+        const int m = op.machineId;
 
-        mReadyTime.at(currOp.machineId) = endTime;
-        oReadyTime.at(Id) = endTime;
-        lastOrderOnMachine.at(currOp.machineId) = Id;
+        // setup may overlap with the time the order is still waiting for its previous step
+        const int setup = setupBefore(lastOrderOnMachine[m], op);
+        const int startTime = max(mReadyTime[m] + setup, oReadyTime[id]);
+        const int endTime = startTime + op.processingTimeMinutes;
 
-        if (endTime > makespan) {
-            makespan = endTime;
+        mReadyTime[m] = endTime;
+        oReadyTime[id] = endTime;
+        lastOrderOnMachine[m] = id;
+
+        if (endTime > s.makespan) s.makespan = endTime;
+
+        // tardiness only when the order completes (last step)
+        if (step + 1 == opMatrix[id].size()) {
+            const int tardiness = max(0, endTime - op.dueDateMinutes);
+            if (tardiness > 0) {
+                s.lateOrders++;
+                s.totalTardiness += tardiness;
+                s.priorityPenalty += static_cast<long long>(tardiness) * priorityWeight(op.priority);
+            }
         }
 
-        int tardiness = max(0, endTime - currOp.dueDateMinutes);
-        if (tardiness > 0) {
-            // (P1 x10, P2 x50, P3 x200)
-            int weight = (currOp.priority == 3) ? 200 : (currOp.priority == 2 ? 50 : 10);
-            priorityPenalty += (tardiness * weight);
+        if (out) {
+            ScheduledTask task;
+            task.orderId = id;
+            task.machineId = m;
+            task.stepSequence = static_cast<int>(step) + 1;
+            task.startTime = startTime;
+            task.endTime = endTime;
+            out->push_back(task);
         }
     }
-    
-    chrom.fitness = makespan + priorityPenalty;
-    return chrom.fitness;
+
+    s.fitness = static_cast<long long>(s.makespan) + s.priorityPenalty;
+    return s;
 }
 
 // 0.1 F0
-vector<Chromosome> JobShopScheduler::initPopulation(const vector<Operation>& operations) {
-    vector<Chromosome> p(populationSize);
+vector<Chromosome> JobShopScheduler::initPopulation() {
     vector<int> baseGenes;
-    baseGenes.reserve(operations.size());
-    for (const auto& op : operations) {
-        baseGenes.push_back(op.orderId);
+    for (int id : orderIds) {
+        baseGenes.insert(baseGenes.end(), opMatrix[id].size(), id);
     }
 
-    for (int i = 0; i < populationSize; ++i) {
-        Chromosome chrom;
-        chrom.genes = baseGenes; 
-        shuffle(chrom.genes.begin(), chrom.genes.end(), rng); 
-        calFitness(chrom);
-        p[i] = chrom;
+    vector<Chromosome> pop(cfg.populationSize);
+    for (auto& chrom : pop) {
+        chrom.genes = baseGenes;
+        shuffle(chrom.genes.begin(), chrom.genes.end(), rng);
+        chrom.fitness = decode(chrom.genes, nullptr).fitness;
     }
-    return p;
+    return pop;
+}
+
+// 0. setup and run GA
+vector<ScheduledTask> JobShopScheduler::schedule(const vector<Operation>& operations) {
+    stats = ScheduleStats();
+    if (operations.empty()) return {};
+
+    buildModel(operations);
+
+    auto byFitness = [](const Chromosome& a, const Chromosome& b) { return a.fitness < b.fitness; };
+
+    vector<Chromosome> pop = initPopulation();
+    sort(pop.begin(), pop.end(), byFitness);
+    Chromosome best = pop[0];
+
+    // 0.3 loop GA (sorted and compared with best right after each generation, including the last one)
+    for (int gen = 0; gen < cfg.maxGenerations; ++gen) {
+        vector<Chromosome> nextGen;
+        nextGen.reserve(pop.size());
+
+        // Elitism
+        nextGen.push_back(pop[0]);
+
+        while (static_cast<int>(nextGen.size()) < cfg.populationSize) {
+            const Chromosome& p1 = tourSelection(pop);
+            const Chromosome& p2 = tourSelection(pop);
+
+            Chromosome child = crossoverPOX(p1, p2);
+            mutate(child);
+            child.fitness = decode(child.genes, nullptr).fitness;
+
+            nextGen.push_back(move(child));
+        }
+
+        pop.swap(nextGen);
+        sort(pop.begin(), pop.end(), byFitness);
+        if (pop[0].fitness < best.fitness) best = pop[0];
+    }
+
+    // 0.4 - end, build schedule from best
+    vector<ScheduledTask> res;
+    res.reserve(best.genes.size());
+    stats = decode(best.genes, &res);
+    return res;
 }
 
 // 0.3
-Chromosome JobShopScheduler::tourSelection(const vector<Chromosome>& p) {
-    uniform_int_distribution<> dist(0, populationSize - 1);
+const Chromosome& JobShopScheduler::tourSelection(const vector<Chromosome>& p) {
+    uniform_int_distribution<int> dist(0, static_cast<int>(p.size()) - 1);
 
-    Chromosome best = p[dist(rng)];
-    for (int i = 1; i < tournamentSize; ++i) {
-        const Chromosome& competitor = p[dist(rng)];
-        if (competitor.fitness < best.fitness) {
-            best = competitor;
-        }
+    const Chromosome* best = &p[dist(rng)];
+    for (int i = 1; i < cfg.tournamentSize; ++i) {
+        const Chromosome* competitor = &p[dist(rng)];
+        if (competitor->fitness < best->fitness) best = competitor;
     }
-    return best;
+    return *best;
 }
 
 // 0.3
 Chromosome JobShopScheduler::crossoverPOX(const Chromosome& p1, const Chromosome& p2) {
+    const size_t numGenes = p1.genes.size();
+
     Chromosome child;
-    int numGenes = p1.genes.size();
     child.genes.assign(numGenes, -1);
 
-    unordered_set<int> uniqueOrders;
-    for (int gene : p1.genes) {
-        uniqueOrders.insert(gene);
+    bernoulli_distribution coin(0.5);
+    fill(pickedOrder.begin(), pickedOrder.end(), 0);
+    for (int id : orderIds) {
+        pickedOrder[id] = coin(rng) ? 1 : 0;
     }
 
-    uniform_int_distribution<> dist(0, 1);
-    
-    unordered_set<int> set1;
-    for (int orderId : uniqueOrders) {
-        if (dist(rng) == 1) {
-            set1.insert(orderId);
-        }
+    for (size_t i = 0; i < numGenes; ++i) {
+        if (pickedOrder[p1.genes[i]]) child.genes[i] = p1.genes[i];
     }
 
-    for (int i = 0; i < numGenes; ++i) {
-        if (set1.count(p1.genes[i])) {
-            child.genes[i] = p1.genes[i];
-        }
+    size_t j = 0;
+    for (size_t i = 0; i < numGenes; ++i) {
+        if (child.genes[i] != -1) continue;
+        while (j < numGenes && pickedOrder[p2.genes[j]]) ++j;
+        if (j >= numGenes) throw runtime_error("Fatal Error: Crossover POX failed.");
+        child.genes[i] = p2.genes[j++];
     }
-
-    int p2Index = 0;
-    for (int i = 0; i < numGenes; ++i) {
-        if (child.genes[i] == -1) {
-            while (p2Index < numGenes && set1.count(p2.genes[p2Index])) {
-                p2Index++;
-            }
-            if (p2Index < numGenes) {
-                child.genes[i] = p2.genes[p2Index];
-                p2Index++;
-            } else {
-                throw runtime_error("Fatal Error: Crossover POX failed.");
-            }
-        }
-    }
-    return child; 
+    return child;
 }
 
 // 0.3
 void JobShopScheduler::mutate(Chromosome& chrom) {
-    uniform_real_distribution<> probDist(0.0, 1.0);
-    uniform_int_distribution<> indexDist(0, static_cast<int>(chrom.genes.size()) - 1);
+    uniform_real_distribution<double> probDist(0.0, 1.0);
+    uniform_int_distribution<int> indexDist(0, static_cast<int>(chrom.genes.size()) - 1);
 
     for (size_t i = 0; i < chrom.genes.size(); ++i) {
-        if (probDist(rng) < mutationRate) {
-            int swapIdx = indexDist(rng);
-            swap(chrom.genes[i], chrom.genes[swapIdx]);
+        if (probDist(rng) < cfg.mutationRate) {
+            swap(chrom.genes[i], chrom.genes[indexDist(rng)]);
         }
     }
 }

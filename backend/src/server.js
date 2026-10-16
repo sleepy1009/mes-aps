@@ -7,6 +7,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+
+// for example, this api get data from DB, converrt ID to C++ ID.
+// real ID :123,654,7776 if we use this vector can be size 7776, but we only need 3 elements, 
+// so we need to map real ID to C++ ID and reverse it back after C++ engine return results
+
+// and we also convert DueDate to min from base time (8:00 AM) cause C++ engine only accept int, not DateTime
 app.post('/api/schedule/run', async (req, res) => {
     try {
         console.log("1. getting data...");
@@ -141,6 +147,7 @@ app.post('/api/schedule/run', async (req, res) => {
     }
 });
 
+// just random condition like due date (using twk) and priority, and random setup time for each operation
 app.post('/api/dataset/import', async (req, res) => {
     const { numJobs, numMachines, operations } = req.body;
     const client = await pool.connect();
@@ -243,6 +250,39 @@ app.get('/api/dataset/info', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+// update job infor
+app.put('/api/dataset/job/:id', async (req, res) => {
+    const jobId = req.params.id;
+    const { priority, due_date, operations } = req.body;
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+        
+        await client.query(
+            'UPDATE Orders SET Priority = $1, DueDate = $2 WHERE Id = $3',
+            [priority, due_date, jobId]
+        );
+
+        for (const op of operations) {
+            await client.query(
+                'UPDATE OrderOperations SET ProcessingTimeMinutes = $1, SetupTimeMinutes = $2 WHERE OrderId = $3 AND StepSequence = $4',
+                [op.time, op.setup, jobId, op.step]
+            );
+        }
+
+        await client.query('COMMIT'); 
+        res.json({ success: true, message: 'update successful!' });
+    } catch (error) {
+        await client.query('ROLLBACK'); 
+        console.error("error:", error);
+        res.status(500).json({ error: error.message });
+    } finally {
+        client.release();
+    }
+});
+
 
 const PORT = 3000;
 app.listen(PORT, () => {

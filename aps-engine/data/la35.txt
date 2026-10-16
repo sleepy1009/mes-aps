@@ -1,4 +1,3 @@
-Lawrence 30x10 instance (Table 9, instance 5); also called (setd5) or (D5)
 30 10
 0 66 2 84 3 26 7 29 9 94 6 98 8  7 5 98 1 45 4 43
 3 32 0 97 6 55 2 88 8 93 9 88 1 20 4 50 7 17 5  5

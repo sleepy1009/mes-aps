@@ -1,4 +1,3 @@
-Lawrence 15x10 instance (Table 7, instance 1); also called (setb1) or (B1)
 15 10
 2 34 3 55 5 95 9 16 4 21 6 71 0 53 8 52 1 21 7 26
 3 39 2 31 0 12 1 42 9 79 8 77 6 77 5 98 4 55 7 66
