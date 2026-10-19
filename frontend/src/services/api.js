@@ -1,13 +1,15 @@
 import axios from 'axios';
-
 const API_BASE = 'http://localhost:3000/api';
-
-export const fetchSchedule = async () => {
-    const response = await axios.post(`${API_BASE}/schedule/run`);
-    return response.data.data;
-};
-
-export const uploadDataset = async (payload) => {
-    const response = await axios.post(`${API_BASE}/dataset/import`, payload);
-    return response.data;
-};
+export const fetchSchedule = async (payload = {}) => (await axios.post(`${API_BASE}/schedule/run`, payload)).data;
+export const fetchLatest = async () => (await axios.get(`${API_BASE}/schedule/latest`)).data;
+export const importCsv = async (payload) => (await axios.post(`${API_BASE}/dataset/import-csv`, payload)).data;
+export const listRuns = async () => (await axios.get(`${API_BASE}/runs`)).data;
+export const compareRuns = async (runA, runB) => (await axios.get(`${API_BASE}/schedule/compare`, { params: { runA, runB } })).data;
+export const listDowntimes = async () => (await axios.get(`${API_BASE}/downtimes`)).data;
+export const addDowntime = async (payload) => (await axios.post(`${API_BASE}/downtimes`, payload)).data;
+export const deleteDowntime = async (id) => (await axios.delete(`${API_BASE}/downtimes/${id}`)).data;
+export const updateMachineRate = async (id, rate) => (await axios.put(`${API_BASE}/machines/${id}/rate`, { rate })).data;
+export const fetchRunKpis = async (runId) => (await axios.get(`${API_BASE}/runs/${runId}/kpis`)).data;
+export const fetchRunResult = async (runId) => (await axios.get(`${API_BASE}/runs/${runId}/result`)).data;
+export const reschedule = async (payload) => (await axios.post(`${API_BASE}/schedule/reschedule`, payload)).data;
+export const listAudit = async () => (await axios.get(`${API_BASE}/audit`)).data;

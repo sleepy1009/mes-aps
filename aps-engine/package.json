@@ -4,7 +4,11 @@
   "main": "build/Release/aps_engine.node",
   "gypfile": true,
   "scripts": {
-    "build": "node-gyp rebuild"
+    "build": "node-gyp rebuild",
+    "bench": "g++ -O2 -std=c++17 src/Scheduler.cpp tests/bench_la.cpp -o bench && bench",
+    "test:cpp": "g++ -O2 -std=c++17 src/Scheduler.cpp tests/test_reschedule.cpp -o test_rs && test_rs",
+    "test:addon": "node tests/test_reschedule.js",
+    "test": "npm run test:cpp && npm run test:addon"
   },
   "dependencies": {
     "node-addon-api": "^7.1.0"
