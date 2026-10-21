@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
+import { useToast } from '../ToastContext';
 
-const API_BASE = 'http://localhost:3000/api';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000/api';
 
-// value for <input type="datetime-local">: local time, not UTC
 const toLocalInput = (iso) => {
     const d = new Date(iso);
     if (isNaN(d)) return '';
@@ -12,44 +12,84 @@ const toLocalInput = (iso) => {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
+const formatDisplayDate = (iso) => {
+    if (!iso) return '-';
+    const d = new Date(iso);
+    if (isNaN(d)) return '-';
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${days[d.getDay()]} · ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} · ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+const PRIORITY_LABELS = {
+    1: { en: 'Normal',  color: '#95a5a6', tip: 'Lowest priority. Scheduled after high/urgent orders.' },
+    2: { en: 'High',    color: '#f39c12', tip: 'Higher priority. Prefer over Normal orders.' },
+    3: { en: 'Urgent',  color: '#e74c3c', tip: 'Highest priority. Heavy tardiness penalty if late.' }
+};
+
 const JobDetails = ({ refreshTrigger, onDataChanged }) => {
     const [info, setInfo] = useState(null);
     const [selectedJobId, setSelectedJobId] = useState('');
     const [editableJob, setEditableJob] = useState(null);
+    const [qtyDraft, setQtyDraft] = useState('');
+    const [editingRelease, setEditingRelease] = useState(false);
+    const [editingDue, setEditingDue] = useState(false);
+    const toast = useToast();
 
     const fetchInfo = useCallback(async () => {
         try {
             const res = await axios.get(`${API_BASE}/dataset/info`);
             setInfo(res.data);
-            // keep the current selection if it still exists, otherwise select the first job
             setSelectedJobId((prev) =>
                 res.data.jobs.some((j) => j.id.toString() === prev)
                     ? prev
                     : (res.data.jobs[0] ? res.data.jobs[0].id.toString() : '')
             );
-        } catch (err) {
-            console.error("Error fetching job information:", err);
+        } catch {
+            toast({ kind: 'error', message: 'Failed to load orders.' });
         }
-    }, []);
+    }, [toast]);
 
-    useEffect(() => {
-        fetchInfo();
-    }, [refreshTrigger, fetchInfo]);
+    useEffect(() => { fetchInfo(); }, [refreshTrigger, fetchInfo]);
 
     useEffect(() => {
         if (info && selectedJobId) {
             const job = info.jobs.find(j => j.id.toString() === selectedJobId);
-            setEditableJob(job ? JSON.parse(JSON.stringify(job)) : null);
+            const cloned = job ? JSON.parse(JSON.stringify(job)) : null;
+            setEditableJob(cloned);
+            setQtyDraft(cloned ? String(cloned.quantity) : '');
+            setEditingRelease(false);
+            setEditingDue(false);
         }
     }, [info, selectedJobId]);
 
+    // preview: processing time = quantity * cycle_time (recomputed locally)
+    const derivedOperations = useMemo(() => {
+        if (!editableJob) return [];
+        return editableJob.operations.map(op => ({
+            ...op,
+            time: Math.ceil(Number(editableJob.quantity) * Number(op.cycle_time || op.time))
+        }));
+    }, [editableJob]);
 
-    const handleSaveAndReschedule = async () => {
+    const applyQuantity = () => {
+        const q = Number(qtyDraft);
+        if (!Number.isInteger(q) || q < 1) {
+            toast({ kind: 'error', message: 'Quantity must be a positive integer.' });
+            return;
+        }
+        setEditableJob({ ...editableJob, quantity: q });
+        toast({ kind: 'info', message: `Quantity updated locally to ${q}. Click Save to persist.` });
+    };
+
+    const handleSave = async () => {
+        if (!editableJob) return;
         const rel = new Date(editableJob.release_date);
         const due = new Date(editableJob.due_date);
-        if (due <= rel) { alert('Due date should <= Release.'); return; }
-        
-        if (!editableJob) return;
+        if (due <= rel) {
+            toast({ kind: 'error', message: 'Due date must be after Release date.' });
+            return;
+        }
         const original = info.jobs.find(j => j.id.toString() === selectedJobId);
         const quantityChanged = original && Number(editableJob.quantity) !== Number(original.quantity);
         const payload = {
@@ -58,136 +98,178 @@ const JobDetails = ({ refreshTrigger, onDataChanged }) => {
             release_date: editableJob.release_date,
             ...(quantityChanged
                 ? { quantity: Number(editableJob.quantity), operations: [] }
-                : { operations: editableJob.operations })
+                : { operations: derivedOperations.map(o => ({ step: o.step, time: o.time })) })
         };
         try {
             await axios.put(`${API_BASE}/dataset/job/${editableJob.id}`, payload);
+            toast({ kind: 'success', message: quantityChanged
+                ? `Saved. Processing times recomputed from routing × ${editableJob.quantity}.`
+                : 'Order saved.' });
             await fetchInfo();
-            alert(quantityChanged
-                ? 'Swapped Quantity: exec time has changed!'
-                : 'Update successfuly!');
             if (onDataChanged) onDataChanged();
         } catch (error) {
-            alert(error.response?.data?.message || 'erorr!');
-            console.error(error);
+            toast({ kind: 'error', message: error.response?.data?.message || 'Save failed.' });
         }
     };
 
-    const handleExportExcel = () => {
+    const handleExport = () => {
         if (!info) return;
-        const exportData = [];
+        const rows = [];
         info.jobs.forEach(job => {
             job.operations.forEach(op => {
-                exportData.push({
-                    'Order ID': job.code,
-                    'Product': job.product_code,
-                    'F_Product': job.family_code,
-                    'Quantity': job.quantity,
-                    'Priority': job.priority,
+                rows.push({
+                    'Order': job.code, 'Product': job.product_code, 'Family': job.family_code,
+                    'Qty': job.quantity, 'Priority': job.priority,
                     'Release': new Date(job.release_date).toLocaleString(),
-                    'Due Date': new Date(job.due_date).toLocaleString(),
-                    'Step': op.step,
-                    'Machine': op.machine,
-                    'Time running - min': op.time
+                    'Due': new Date(job.due_date).toLocaleString(),
+                    'Step': op.step, 'Machine': op.machine, 'Minutes': op.time
                 });
             });
         });
-
-        const worksheet = XLSX.utils.json_to_sheet(exportData);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "LichTrinhSanXuat");
-        XLSX.writeFile(workbook, "DuLieuSanXuat_Export.xlsx");
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'MasterData');
+        XLSX.writeFile(wb, 'MasterData_Export.xlsx');
+        toast({ kind: 'success', message: `Exported ${rows.length} rows.` });
     };
 
-    const updateOperation = (stepIdx, field, value) => {
-        const newJob = { ...editableJob };
-        newJob.operations[stepIdx][field] = Number(value);
-        setEditableJob(newJob);
-    };
-
-
-    if (!info) return <div className="placeholder-content">Đang tải...</div>;
-    if (info.numJobs === 0) return <div className="placeholder-content">No data, Import file?</div>;
-
-    const inputStyle = { width: '60px', padding: '4px', border: '1px solid #ccc', borderRadius: '4px' };
-    const thStyle = { padding: '8px', textAlign: 'left', borderBottom: '2px solid #ddd', background: '#ecf0f1', color: '#333' };
+    if (!info) return <div className="loading">Loading…</div>;
+    if (info.numJobs === 0) return <div className="empty">No orders yet. Import a CSV/Excel file first.</div>;
 
     return (
-        <div className="quadrant" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '15px' }}>
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+        <div className="panel-root">
+            <div className="panel-toolbar">
                 <select
+                    className="select select-rich"
                     value={selectedJobId}
                     onChange={(e) => setSelectedJobId(e.target.value)}
-                    style={{ flex: 1, padding: '8px', borderRadius: '4px' }}
+                    title="Select order"
                 >
-                    {info.jobs.map(job => (
-                        <option key={job.id} value={job.id}>{job.code}</option>
-                    ))}
+                    {info.jobs.map(job => {
+                        const due = new Date(job.due_date);
+                        const dueStr = isNaN(due) ? '' :
+                            `${String(due.getDate()).padStart(2,'0')}/${String(due.getMonth()+1).padStart(2,'0')} ${String(due.getHours()).padStart(2,'0')}:${String(due.getMinutes()).padStart(2,'0')}`;
+                        return (
+                            <option key={job.id} value={job.id}>
+                                {job.code} · {job.product_code} × {job.quantity} · due {dueStr}
+                            </option>
+                        );
+                    })}
                 </select>
-                <button onClick={handleSaveAndReschedule} style={{ padding: '8px 15px', background: '#3498db', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                <button className="btn btn-primary" onClick={handleSave} title="Persist changes and reschedule">
                     Save & Run
                 </button>
-                <button onClick={handleExportExcel} style={{ padding: '8px 15px', background: '#27ae60', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                <button className="btn btn-success" onClick={handleExport} title="Export all orders to Excel">
                     Export
                 </button>
             </div>
 
             {editableJob && (
-                <div style={{ flex: 1, overflowY: 'auto' }}>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', marginBottom: '10px', padding: '10px', background: '#34495e', color: 'white', borderRadius: '4px' }}>
-                        <div>
-                            <strong>Product: </strong>
-                            {editableJob.product_code} ({editableJob.family_code}) × {editableJob.quantity}
-                        </div>
-                        <div>
-                            <strong>Quantity: </strong>
-                            <input type="number" min="1" value={editableJob.quantity}
-                                onChange={(e) => setEditableJob({ ...editableJob, quantity: Number(e.target.value) })}
-                                style={{ ...inputStyle, width: '80px' }} />
-                        </div>
-                        <div>
-                            <strong>Priority: </strong>
-                            <select value={editableJob.priority} onChange={(e) => setEditableJob({...editableJob, priority: Number(e.target.value)})} style={{ padding: '4px' }}>
-                                <option value={1}>1 - Normal</option>
-                                <option value={2}>2 - High</option>
-                                <option value={3}>3 - Urgent</option>
-                            </select>
-                        </div>
-                        <div>
-                            <strong>Release: </strong>
-                            <input type="datetime-local"
-                                value={toLocalInput(editableJob.release_date)}
-                                onChange={(e) => setEditableJob({...editableJob, release_date: e.target.value})}
-                                style={{ padding: '4px' }}
+                <div className="form-stack">
+                    <div className="field-row">
+                        <span className="field-label">Product</span>
+                        <span className="field-value">
+                            <b>{editableJob.product_code}</b> - {editableJob.product_name || ''}
+                            <span className="pill">{editableJob.family_code}</span>
+                        </span>
+                    </div>
+
+                    <div className="field-row">
+                        <span className="field-label" title="Number of units. Click OK to recompute processing times from routing.">
+                            Quantity
+                        </span>
+                        <div className="input-group">
+                            <input
+                                type="number" min="1"
+                                className="input input-short"
+                                value={qtyDraft}
+                                onChange={(e) => setQtyDraft(e.target.value)}
                             />
-                        </div>
-                        <div>
-                            <strong>Due date: </strong>
-                            <input type="datetime-local"
-                                value={toLocalInput(editableJob.due_date)}
-                                onChange={(e) => setEditableJob({...editableJob, due_date: e.target.value})}
-                                style={{ padding: '4px' }}
-                            />
+                            <button className="btn btn-ghost" onClick={applyQuantity}>Save</button>
                         </div>
                     </div>
 
-                    <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                    <div className="field-row">
+                        <span className="field-label" title="Scheduling priority. Urgent orders pay the highest tardiness penalty.">
+                            Priority
+                        </span>
+                        <div className="segmented" role="radiogroup" aria-label="Priority">
+                            {[1, 2, 3].map(p => (
+                                <button
+                                    key={p} type="button"
+                                    className={`seg ${editableJob.priority === p ? 'active' : ''}`}
+                                    onClick={() => setEditableJob({ ...editableJob, priority: p })}
+                                    title={PRIORITY_LABELS[p].tip}
+                                    aria-pressed={editableJob.priority === p}
+                                >
+                                    <span className="seg-dot" style={{ background: PRIORITY_LABELS[p].color }} />
+                                    {p} · {PRIORITY_LABELS[p].en}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="field-row">
+                        <span className="field-label" title="Earliest time any operation of this order can start (material ready).">
+                            Release
+                        </span>
+                        {editingRelease ? (
+                            <div className="input-group">
+                                <input type="datetime-local" className="input"
+                                    value={toLocalInput(editableJob.release_date)}
+                                    onChange={(e) => setEditableJob({ ...editableJob, release_date: e.target.value })}
+                                    autoFocus />
+                                <button className="btn btn-ghost" onClick={() => setEditingRelease(false)}>Done</button>
+                            </div>
+                        ) : (
+                            <div className="input-group">
+                                <span className="date-display">{formatDisplayDate(editableJob.release_date)}</span>
+                                <button className="btn btn-ghost" onClick={() => setEditingRelease(true)}>Edit</button>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="field-row">
+                        <span className="field-label" title="Contractual deadline. Order is late if completed after this time.">
+                            Due date
+                        </span>
+                        {editingDue ? (
+                            <div className="input-group">
+                                <input type="datetime-local" className="input"
+                                    value={toLocalInput(editableJob.due_date)}
+                                    onChange={(e) => setEditableJob({ ...editableJob, due_date: e.target.value })}
+                                    autoFocus />
+                                <button className="btn btn-ghost" onClick={() => setEditingDue(false)}>Done</button>
+                            </div>
+                        ) : (
+                            <div className="input-group">
+                                <span className="date-display">{formatDisplayDate(editableJob.due_date)}</span>
+                                <button className="btn btn-ghost" onClick={() => setEditingDue(true)}>Edit</button>
+                            </div>
+                        )}
+                    </div>
+
+                    <h4 className="section-title">
+                        Routing snapshot
+                        <span className="hint"> (Time = quantity × cycle time)</span>
+                    </h4>
+                    <div className="table-wrap">
+                        <table className="table">
                             <thead>
                                 <tr>
-                                    <th style={thStyle}>Step</th>
-                                    <th style={thStyle}>Machine</th>
-                                    <th style={thStyle}>Processing time</th>
+                                    <th>Step</th>
+                                    <th>Machine</th>
+                                    <th className="num">Cycle (min/unit)</th>
+                                    <th className="num">Time (min)</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {editableJob.operations.map((op, idx) => (
-                                    <tr key={idx} style={{ borderBottom: '1px solid #444' }}>
-                                        <td style={{ padding: '8px' }}>{op.step}</td>
-                                        <td style={{ padding: '8px' }}>{op.machine}</td>
-                                        <td style={{ padding: '8px' }}>
-                                            <input type="number" min="1" style={inputStyle} value={op.time} onChange={(e) => updateOperation(idx, 'time', e.target.value)} />
-                                        </td>
+                                {derivedOperations.map((op, idx) => (
+                                    <tr key={idx}>
+                                        <td>{op.step}</td>
+                                        <td>{op.machine}</td>
+                                        <td className="num">{op.cycle_time ?? '-'}</td>
+                                        <td className="num">{op.time}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -198,5 +280,4 @@ const JobDetails = ({ refreshTrigger, onDataChanged }) => {
         </div>
     );
 };
-
 export default JobDetails;

@@ -132,17 +132,22 @@ router.get('/dataset/info', handle(async (req, res) => {
             COALESCE(json_agg(
                 json_build_object(
                     'step', op.StepSequence,
-                    'machine', op.MachineId,
-                    'time', op.ProcessingTimeMinutes
+                    'machine', m.MachineCode,
+                    'machine_id', op.MachineId,
+                    'time', op.ProcessingTimeMinutes,
+                    'cycle_time', r.CycleTimeMinutes
                 ) ORDER BY op.StepSequence
             ) FILTER (WHERE op.Id IS NOT NULL), '[]') AS operations
         FROM Orders o
         INNER JOIN Products p ON p.Id = o.ProductId
         INNER JOIN ProductFamilies f ON f.Id = p.FamilyId
         LEFT JOIN OrderOperations op ON op.OrderId = o.Id
+        LEFT JOIN RoutingSteps r ON r.ProductId = p.Id AND r.StepSequence = op.StepSequence
+        LEFT JOIN Machines m ON m.Id = op.MachineId
         GROUP BY o.Id, p.ProductCode, p.ProductName, f.FamilyCode
         ORDER BY o.Id;
     `);
+    
     res.json({
         numMachines: mRes.rows.length,
         machines: mRes.rows,

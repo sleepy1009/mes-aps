@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import GanttChart from './components/GanttChart';
 import JobDetails from './components/JobDetails';
@@ -9,21 +9,31 @@ import ReschedulePanel from './components/ReschedulePanel';
 import RoutingDiagram from './components/RoutingDiagram';
 import AuditPanel from './components/AuditPanel';
 import FeatureDock from './components/FeatureDock';
+import Header from './components/Header';
+import { ToastProvider, useToast } from './ToastContext';
 import { FEATURES } from './utils/panels';
 import { fetchSchedule, fetchLatest, importCsv, listDowntimes } from './services/api';
 import { TEMPLATE_ROWS } from './utils/data';
+import GanttSkeleton from './components/GanttSkeleton';
+import GanttEmpty from './components/GanttEmpty';
 import './index.css';
 
 const EMPTY_META = { planStart: null, orderDue: {}, baselines: [], runId: null, snapshotMin: null, lateCount: 0 };
 
-function App() {
+const AppInner = () => {
     const [schedules, setSchedules] = useState([]);
     const [meta, setMeta] = useState(EMPTY_META);
     const [liveWindows, setLiveWindows] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
     const [refreshDataset, setRefreshDataset] = useState(0);
     const [runKey, setRunKey] = useState(0);
+
+    const ganttRef = useRef(null);
+    const scrollToGantt = () => {
+        if (ganttRef.current) ganttRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    const toast = useToast();
 
     const loadDowntimes = () => {
         listDowntimes()
@@ -53,53 +63,51 @@ function App() {
     };
     useEffect(() => { fetchLatest().then(applyPayload).catch(() => {}); }, []);
 
-    const handleCsvUpload = async (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
+    const handleImport = async (file) => {
         try {
             setLoading(true);
-            setError(null);
             const buf = await file.arrayBuffer();
             const wb = XLSX.read(buf, { cellDates: true });
             const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
             const res = await importCsv({ rows });
-            alert(res.message);
+            toast({ kind: 'success', message: res.message });
             setSchedules([]);
             setMeta(EMPTY_META);
             setRefreshDataset(prev => prev + 1);
             setRunKey(k => k + 1);
-            loadDowntimes(); // import = factory reset: downtime/rate clear, panel need reload
+            loadDowntimes();
         } catch (err) {
-            setError(err.response?.data?.message || err.message);
+            toast({ kind: 'error', message: err.response?.data?.message || err.message });
         } finally {
             setLoading(false);
-            event.target.value = '';
         }
     };
 
-    const handleDownloadTemplate = () => {
+    const handleTemplate = () => {
         const ws = XLSX.utils.json_to_sheet(TEMPLATE_ROWS);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Orders');
         XLSX.writeFile(wb, 'APS_import_template.xlsx');
+        toast({ kind: 'info', message: 'Template downloaded.' });
     };
 
-    const handleRunSchedule = async () => {
-        setLoading(true); setError(null);
+    const handleRun = async () => {
+        setLoading(true);
+        scrollToGantt();
         try {
             applyPayload(await fetchSchedule({}));
             setRunKey(k => k + 1);
+            toast({ kind: 'success', message: 'Schedule completed.' });
         } catch (err) {
-            setError(err.response?.data?.message || 'Server error!');
+            toast({ kind: 'error', message: err.response?.data?.message || 'Server error.' });
         } finally {
             setLoading(false);
         }
     };
 
-    // which component each toolbar button opens (ids come from utils/panels.js)
     const renderPanel = (id) => {
         switch (id) {
-            case 'master': return <JobDetails refreshTrigger={refreshDataset} onDataChanged={handleRunSchedule} />;
+            case 'master': return <JobDetails refreshTrigger={refreshDataset} onDataChanged={handleRun} />;
             case 'routing': return <RoutingDiagram />;
             case 'kpi': return <KpiPanel runId={meta.runId} baselines={meta.baselines} />;
             case 'compare': return <RunCompare refreshKey={runKey} />;
@@ -109,6 +117,7 @@ function App() {
                     applyPayload(payload);
                     setRunKey(k => k + 1);
                     loadDowntimes();
+                    scrollToGantt();
                 }} />
             );
             case 'audit': return <AuditPanel refreshKey={runKey} />;
@@ -118,40 +127,40 @@ function App() {
 
     return (
         <div className="dashboard-frame">
-            <div className="header-controls">
-                <div>
-                    <h2 style={{ margin: 0, color: '#3498db' }}>APS Core Engine</h2>
-                    <span style={{ fontSize: '12px', color: '#888' }}>
-                        Import → Run → Gantt & table features
-                    </span>
-                </div>
-                <div style={{ display: 'flex', gap: '15px' }}>
-                    <button className="btn btn-upload" onClick={handleDownloadTemplate}>⬇ Template</button>
-                    <label className="btn btn-upload">
-                        📂 Import (CSV/Excel)
-                        <input type="file" accept=".csv,.xlsx,.xls" hidden onChange={handleCsvUpload} />
-                    </label>
-                    <button className="btn btn-run" onClick={handleRunSchedule} disabled={loading}>
-                        {loading ? 'Running...' : 'Run'}
-                    </button>
-                </div>
+            <Header
+                onTemplate={handleTemplate}
+                onImport={handleImport}
+                onRun={handleRun}
+                loading={loading}
+            />
+            <div ref={ganttRef} style={{ scrollMarginTop: 8 }}>
+                {loading ? (
+                    <GanttSkeleton />
+                ) : schedules.length > 0 ? (
+                    <GanttChart
+                        data={schedules}
+                        planStart={meta.planStart}
+                        windows={liveWindows}
+                        orderDue={meta.orderDue}
+                        snapshotMin={meta.snapshotMin}
+                        lateCount={meta.lateCount}
+                    />
+                ) : (
+                    <GanttEmpty />
+                )}
             </div>
-            {error && <div style={{ color: '#ff6b6b', background: '#332222', padding: '10px', borderRadius: '5px' }}>{error}</div>}
-
-            {schedules.length > 0 && !loading ? (
-                <GanttChart data={schedules} planStart={meta.planStart} windows={liveWindows}
-                    orderDue={meta.orderDue} snapshotMin={meta.snapshotMin} />
-            ) : (
-                <div className="quadrant" style={{ height: 200 }}>
-                    <div className="placeholder-content">
-                        {loading ? 'Processing...' : 'Import data and run to see.'}
-                    </div>
-                </div>
-            )}
-
-            <FeatureDock features={FEATURES} renderPanel={renderPanel}
-                badges={{ kpi: meta.lateCount > 0 ? `${meta.lateCount} late` : null }} />
+            <FeatureDock
+                features={FEATURES}
+                renderPanel={renderPanel}
+                badges={{ kpi: meta.lateCount > 0 ? `${meta.lateCount} late` : null }}
+            />
         </div>
     );
-}
+};
+
+const App = () => (
+    <ToastProvider>
+        <AppInner />
+    </ToastProvider>
+);
 export default App;

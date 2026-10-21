@@ -60,7 +60,7 @@ const GanttChart = ({ data, planStart, windows = [], orderDue = {}, snapshotMin 
                 task.setupMinutes || 0,
                 task.status || 0
             ],
-            itemStyle: { color: `hsl(${(task.orderId * 40) % 360}, 70%, 50%)` },
+            itemStyle: { color: `hsl(${(task.orderId * 40) % 360}, 70%, ${38 + Math.min(task.step, 6) * 7}%)` },
             info: {
                 orderCode: task.orderCode, productCode: task.productCode,
                 machineCode: task.machineCode, machineName: task.machineName,
@@ -122,7 +122,16 @@ const GanttChart = ({ data, planStart, windows = [], orderDue = {}, snapshotMin 
             style.stroke = isLate ? '#e74c3c' : '#222';
             style.lineWidth = isLate ? 3 : 1;
         }
-        return { type: 'rect', transition: ['shape'], shape: rect, style };
+        const light = 38 + Math.min(api.value(3), 6) * 7;
+        const children = [{ type: 'rect', transition: ['shape'], shape: rect, style }];
+        if (rect.width >= 22 && st !== 2) {
+            children.push({
+                type: 'text', x: rect.x + rect.width / 2, y: rect.y + rect.height / 2,
+                style: { text:  api.value(3), fill: light > 60 ? '#222' : '#fff',
+                         font: 'bold 10px sans-serif', align: 'center', verticalAlign: 'middle' }
+            });
+        }
+        return { type: 'group', children };
     };
     const renderSnapshot = (params, api) => {
         const x = api.coord([api.value(0), 0])[0];
@@ -154,8 +163,7 @@ const GanttChart = ({ data, planStart, windows = [], orderDue = {}, snapshotMin 
                 const i = params.data.info;
                 const setup = v[7] > 0 ? `<br/>Setup: ${v[7]} min ${fmtFull(baseMs, i.setupStartMin)})` : '';
                 const late = v[6] === 1 ? '<br/><span style="color:#e74c3c">LATE</span>' : '';
-                return `<div style="font-weight:bold;color:${params.color}">${i.orderCode} (${i.productCode}) — Step ${v[3]}</div>` +
-                       `Machine: ${i.machineCode} ${i.machineName ? '— ' + i.machineName : ''}<br/>` +
+                return `<div style="font-weight:bold;color:${params.color}">${i.orderCode} (${i.productCode}) - Step ${v[3]}</div>` +
                        `Status: ${STATUS_LABEL[v[8]]}<br/>` +
                        `Start: ${fmtFull(baseMs, v[1])}<br/>End: ${fmtFull(baseMs, v[2])}<br/>Run time: ${v[4]} min` + setup + late;
             }
@@ -163,7 +171,7 @@ const GanttChart = ({ data, planStart, windows = [], orderDue = {}, snapshotMin 
         dataZoom: [
             {
                 type: 'slider', filterMode: 'weakFilter', showDataShadow: false,
-                bottom: 0, height: 20,
+                bottom: 30, height: 20,
                 startValue: 0, endValue: Math.min(horizonEnd, 1440),
                 labelFormatter: (v) => fmtFull(baseMs, v)
             },
@@ -191,12 +199,12 @@ const GanttChart = ({ data, planStart, windows = [], orderDue = {}, snapshotMin 
 
     return (
         <div className="quadrant" style={{ gridColumn: 'span 2' }}>
-            <h3 style={{ margin: '0 0 10px 0', borderBottom: '1px solid #ddd', paddingBottom: '10px' }}>
+            <h3 style={{ borderBottom: '1px solid #ddd', paddingBottom: '10px' }}>
                 Resource Gantt chart <span style={{ fontSize: 12, color: '#888' }}>
-                    (gray = HISTORY · dashed line = FIXED · red line = LATE · grey block = PM/Breakdown · dashed red line = T)
+                    (gray = HISTORY  ·  dashed line = FIXED  ·  red line = LATE  ·  grey block = PM/Breakdown  ·  number = STEP  ·  dashed red line = T)
                 </span>
             </h3>
-            <ReactECharts option={option} style={{ height: '450px', width: '100%' }} />
+            <ReactECharts option={option} style={{ height: 'var(--gantt-body-h)', width: '100%'}} />
         </div>
     );
 };

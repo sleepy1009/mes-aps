@@ -1,24 +1,39 @@
-.dock-toolbar { position: sticky; top: 0; z-index: 20; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-    padding: 10px; background: #161616; border: 1px solid #333; border-radius: 10px; box-shadow: 0 6px 12px rgba(0,0,0,.5); }
-.dock-btn { text-align: left; padding: 8px 14px; min-width: 150px; border: 1px solid #444; border-radius: 8px;
-    background: #2a2a2a; color: #ddd; cursor: pointer; transition: all .15s; }
+.dock-toolbar { position: sticky; top: 0; z-index: 20; display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    padding: 10px; background: #171717; border: 1px solid #333; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,.5); margin-bottom: 6px;}
+.dock-btn { text-align: left; padding: 8px 14px;  border: 1px solid #444; border-radius: 8px;
+    background: #2a2a2a; color: #ddd; cursor: pointer; transition: all .15s;width: auto; }
 .dock-btn:hover { background: #343434; }
-.dock-btn.active { background: #2980b9; border-color: #3498db; color: #fff; }
+.dock-btn.active { background: #444444; border-color: #fff; color: #fff; }
 .dock-btn .en { font-weight: bold; font-size: 14px; }
 .dock-btn .vi { font-size: 11px; opacity: .75; margin-top: 2px; }
 .dock-badge { background: #e74c3c; color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 11px; margin-left: 8px; }
-.dock-swap { color: #888; font-size: 16px; padding: 0 2px; cursor: help; }
+.dock-swap { color: #fff; font-size: 16px; padding: 0 2px; cursor: help; }
 .dock-spacer { flex: 1; }
 .dock-tools { display: flex; gap: 6px; align-items: center; color: #aaa; font-size: 12px; }
 .dock-mini { padding: 6px 10px; border: 1px solid #444; border-radius: 6px; background: #2a2a2a; color: #ddd; cursor: pointer; }
 .dock-mini.active { background: #555; color: #fff; }
 .dock-mini:disabled { opacity: .4; cursor: not-allowed; }
-.dock-hint { color: #888; text-align: center; padding: 30px; border: 2px dashed #333; border-radius: 10px; }
+.dock-hint { color: #888; text-align: center; padding: 30px; border: 2px dashed #333; border-radius: 10px; margin-top: 12px;}
 .dock-grid { display: grid; gap: 20px; align-items: start; }
-.dock-panel { background: #1e1e1e; border: 1px solid #333; border-radius: 10px; overflow: hidden; scroll-margin-top: 110px; }
-.dock-panel-bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; background: #262626; color: #eee; font-weight: bold; }
+.dock-panel {
+    background: #E8E8E8;
+    border: 3px solid #000;
+    border-radius: 10px;
+    overflow: visible;
+    scroll-margin-top: 110px;
+}
+
+
+
+.dock-panel-bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; background: #171717; color: #eee; font-weight: bold; font-family: var(--Tektur); font-size: 16px;}
 .dock-panel-bar small { font-weight: normal; color: #aaa; margin-left: 10px; }
 .dock-panel-bar button { background: none; border: none; color: #aaa; font-size: 16px; cursor: pointer; }
 .dock-panel-bar button:hover { color: #fff; }
-.dock-panel-body { height: clamp(480px, 72vh, 720px); display: flex; flex-direction: column; }
+.dock-panel-body {
+    height: auto;
+    max-height: none;
+    display: flex;
+    flex-direction: column;
+}
+
 .dock-panel-body > .quadrant { flex: 1; min-height: 0; border-radius: 0; box-shadow: none; overflow: auto; }
