@@ -14,8 +14,9 @@
 .dock-mini.active { background: #555; color: #fff; }
 .dock-mini:disabled { opacity: .4; cursor: not-allowed; }
 .dock-hint { color: #888; text-align: center; padding: 30px; border: 2px dashed #333; border-radius: 10px; margin-top: 12px;}
-.dock-grid { display: grid; gap: 20px; align-items: start; }
+.dock-grid { display: grid; gap: 20px; align-items: start; transition: min-height .3s ease; }
 .dock-panel {
+    --panel-max-h: min(76vh, 800px);  
     background: #E8E8E8;
     border: 3px solid #000;
     border-radius: 10px;
@@ -25,15 +26,18 @@
 
 
 
+
 .dock-panel-bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; background: #171717; color: #eee; font-weight: bold; font-family: var(--Tektur); font-size: 16px;}
 .dock-panel-bar small { font-weight: normal; color: #aaa; margin-left: 10px; }
 .dock-panel-bar button { background: none; border: none; color: #aaa; font-size: 16px; cursor: pointer; }
 .dock-panel-bar button:hover { color: #fff; }
 .dock-panel-body {
     height: auto;
-    max-height: none;
+    max-height: var(--panel-max-h);
+    overflow: auto;
     display: flex;
     flex-direction: column;
+    border-radius: 0 0 7px 7px;
 }
 
 .dock-panel-body > .quadrant { flex: 1; min-height: 0; border-radius: 0; box-shadow: none; overflow: auto; }

@@ -3,12 +3,13 @@ import * as XLSX from 'xlsx';
 import { fetchRunKpis, fetchRunResult } from '../services/api';
 
 const pct = (x) => (x === null || x === undefined) ? '-' : (x * 100).toFixed(1) + '%';
-const th = { padding: '6px', textAlign: 'left', borderBottom: '2px solid #ddd', background: '#ecf0f1' };
-const BASELINE_NAME = { FIFO: 'FIFO (first in first out)', EDD: 'EDD (priority duedate)' };
-const Card = ({ label, value, bad }) => (
-    <div style={{ background: bad ? '#fdecea' : '#f4f6f7', padding: '8px 10px', borderRadius: 4 }}>
-        <div style={{ fontSize: 11, color: '#777' }}>{label}</div>
-        <div style={{ fontSize: 15, fontWeight: 'bold', color: bad ? '#c0392b' : '#222' }}>{value}</div>
+const BASELINE_NAME = { FIFO: 'FIFO (first in first out)', EDD: 'EDD (earliest due date)' };
+
+// one KPI = one field-row, same visual language as Master data (label left, value right)
+const FieldRow = ({ label, tip, value, bad }) => (
+    <div className="field-row">
+        <span className="field-label" title={tip}>{label}</span>
+        <span className={`field-value${bad ? ' bad' : ''}`}>{value}</span>
     </div>
 );
 
@@ -40,95 +41,152 @@ const KpiPanel = ({ runId, baselines = [] }) => {
     };
 
     const lateOrders = (result?.orders || []).filter(o => o.status === 'late');
+    const avgUtil = k && k.machines.length
+        ? k.machines.reduce((s, m) => s + (m.utilization || 0), 0) / k.machines.length
+        : 0;
+
     return (
-        <div className="quadrant" style={{ padding: 15, overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <span style={{ fontSize: 13, color: '#666' }}>
-                    {runId ? `Run #${runId} ` : ''}
+        <div className="panel-root">
+            <div className="panel-toolbar">
+                <span className="field-value-2">
+                    {runId ? <><b>Run #{runId}</b>{k ? <span className="pill"></span> : null}</> : 'No run selected'}
                 </span>
+                <span className="toolbar-spacer" />
                 {result && (
-                    <button onClick={exportSchedule}
-                        style={{ padding: '6px 12px', background: '#27ae60', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold' }}>
-                        Export schedule
+                    <button className="btn btn-success" onClick={exportSchedule}
+                        title="Export this run's schedule (all tasks) to Excel">
+                        Export
                     </button>
                 )}
             </div>
-            {!runId && <div className="placeholder-content">No schedule</div>}
-            {err && <div style={{ color: '#e74c3c' }}>{err}</div>}
+
+            {!runId && <div className="empty">No schedule yet. Import data and run.</div>}
+            {err && <div className="form-error">{err}</div>}
+
             {k && (
                 <>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
-                        <Card label="Makespan" value={`${k.makespan} phút`} />
-                        <Card label="End" value={k.makespan ? new Date(new Date(k.planStart).getTime() + k.makespan * 60000).toLocaleString() : '-'} />
-                        <Card label="Late orders / total" value={`${k.lateOrders} / ${k.orders.length}`} bad={k.lateOrders > 0} />
-                        <Card label="OTD" value={pct(k.otd)} bad={k.otd < 1} />
-                        <Card label="Total tardiness" value={k.totalTardiness} bad={k.totalTardiness > 0} />
-                        <Card label="Setup ratio" value={pct(k.setupRatio)} />
-                        <Card label="Bottleneck" value={k.bottleneckCode || '-'} />
-                        <Card label="Avg utilization" value={pct(k.machines.length ? k.machines.reduce((s, m) => s + (m.utilization || 0), 0) / k.machines.length : 0)} />
+                    <div className="form-stack">
+                        <FieldRow label="Makespan" tip="Total length of the schedule: finish time of the last task."
+                            value={`${k.makespan} min (${(k.makespan / 60).toFixed(1)} h)`} />
+                        <FieldRow label="Ends" tip="Clock time when the last task finishes."
+                            value={k.makespan ? new Date(new Date(k.planStart).getTime() + k.makespan * 60000).toLocaleString() : '-'} />
+                        <FieldRow label="Late orders" tip="Orders finishing after their due date."
+                            value={`${k.lateOrders} / ${k.orders.length}`} bad={k.lateOrders > 0} />
+                        <FieldRow label="OTD" tip="On-Time Delivery: share of orders finishing on or before due date."
+                            value={pct(k.otd)} bad={k.otd < 1} />
+                        <FieldRow label="Tardiness" tip="Sum of minutes late across all late orders."
+                            value={`${k.totalTardiness} min`} bad={k.totalTardiness > 0} />
+                        <FieldRow label="Setup ratio" tip="Setup minutes / (setup + cutting) minutes."
+                            value={pct(k.setupRatio)} />
+                        <FieldRow label="Bottleneck" tip="Machine with the highest running utilization."
+                            value={k.bottleneckCode || '-'} />
+                        <FieldRow label="Avg utilization" tip="Average of (cutting + setup) / available time across machines."
+                            value={pct(avgUtil)} />
                     </div>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 12 }}>
-                        <thead><tr><th style={th}>Machine</th><th style={th}>Busy</th><th style={th}>Setup</th><th style={th}>Unavailable</th><th style={th}>Utilization</th></tr></thead>
-                        <tbody>
-                            {k.machines.map(m => (
-                                <tr key={m.machineId} style={{ borderBottom: '1px solid #eee' }}>
-                                    <td style={{ padding: 6 }}>{m.code}</td>
-                                    <td style={{ padding: 6 }}>{m.busyMinutes}</td>
-                                    <td style={{ padding: 6 }}>{m.setupMinutes}</td>
-                                    <td style={{ padding: 6 }}>{m.unavailableMinutes}</td>
-                                    <td style={{ padding: 6 }}>
-                                        <div style={{ background: '#eee', width: '100%', height: 10, borderRadius: 3 }}>
-                                            <div style={{ background: m.machineId === k.bottleneckMachineId ? '#e67e22' : '#3498db',
-                                                width: `${Math.min(100, (m.utilization || 0) * 100)}%`, height: 10, borderRadius: 3 }} />
-                                        </div>
-                                        <span style={{ fontSize: 11 }}>{pct(m.utilization)}</span>
-                                    </td>
+
+                    <h4 className="section-title">
+                        Machine load
+                        <span className="hint"> (cutting = spindle time · booked = held incl. idle wait)</span>
+                    </h4>
+                    <div className="table-wrap">
+                        <table className="table">
+                            <thead>
+                                <tr>
+                                    <th>Machine</th>
+                                    <th className="num" title="Sum of (End - Start) per task">Cutting</th>
+                                    <th className="num">Setup</th>
+                                    <th className="num" title="Setup + idle wait + cutting: machine held for orders">Booked</th>
+                                    <th className="num">Unavail.</th>
+                                    <th title="(Cutting + Setup) / (makespan - unavailable)">Utilization</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                    <h4 style={{ margin: '0 0 6px 0' }}>Late orders & cause</h4>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
-                        <thead><tr><th style={th}>Order</th><th style={th}>Late - min</th><th style={th}>Cause</th></tr></thead>
-                        <tbody>
-                            {lateOrders.length === 0 && (
-                                <tr><td colSpan={3} style={{ padding: 6, color: '#27ae60' }}>No late order.</td></tr>
-                            )}
-                            {lateOrders.map(o => (
-                                <tr key={o.id} style={{ borderBottom: '1px solid #eee' }}>
-                                    <td style={{ padding: 6 }}>{o.code}</td>
-                                    <td style={{ padding: 6 }}>{o.lateMinutes}</td>
-                                    <td style={{ padding: 6 }}>
-                                        {o.worstWait
-                                            ? `Wait ${o.worstWait.minutes} min ahead Step ${o.worstWait.step} on ${o.worstWait.machineCode} (Busy or Setup)`
-                                            : 'Dua date nearly release'}
-                                    </td>
+                            </thead>
+                            <tbody>
+                                {k.machines.map(m => (
+                                    <tr key={m.machineId}>
+                                        <td>{m.code}</td>
+                                        <td className="num">{m.cuttingMinutes}</td>
+                                        <td className="num">{m.setupMinutes}</td>
+                                        <td className="num">{m.bookedMinutes}</td>
+                                        <td className="num">{m.unavailableMinutes}</td>
+                                        <td>
+                                            <div className="util-bar">
+                                                <div className={`util-fill${m.machineId === k.bottleneckMachineId ? ' bottleneck' : ''}`}
+                                                    style={{ width: `${Math.min(100, (m.utilization || 0) * 100)}%` }} />
+                                            </div>
+                                            <span className="table-note">{pct(m.utilization)}</span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h4 className="section-title">
+                        Late orders & cause
+                        <span className="hint"> (longest single wait of each late order)</span>
+                    </h4>
+                    <div className="table-wrap">
+                        <table className="table">
+                            <thead>
+                                <tr>
+                                    <th>Order</th>
+                                    <th className="num">Late (min)</th>
+                                    <th>Cause</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                    <h4 style={{ margin: '0 0 6px 0' }}>GA vs Baseline</h4>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                        <thead><tr><th style={th}>Algorithm</th><th style={th}>Makespan</th><th style={th}>Late orders</th><th style={th}>Tardiness</th></tr></thead>
-                        <tbody>
-                            <tr style={{ borderBottom: '1px solid #eee', fontWeight: 'bold' }}>
-                                <td style={{ padding: 6 }}>GA</td>
-                                <td style={{ padding: 6 }}>{k.makespan}</td>
-                                <td style={{ padding: 6 }}>{k.lateOrders}</td>
-                                <td style={{ padding: 6 }}>{k.totalTardiness}</td>
-                            </tr>
-                            {baselines.map(b => (
-                                <tr key={b.name} style={{ borderBottom: '1px solid #eee' }}>
-                                    <td style={{ padding: 6 }}>{BASELINE_NAME[b.name] || b.name}</td>
-                                    <td style={{ padding: 6 }}>{b.kpis.makespanMinutes}</td>
-                                    <td style={{ padding: 6 }}>{b.kpis.lateOrders}</td>
-                                    <td style={{ padding: 6 }}>{b.kpis.totalLateMinutes}</td>
+                            </thead>
+                            <tbody>
+                                {lateOrders.length === 0 && (
+                                    <tr><td colSpan={3} className="ok-note">No late order.</td></tr>
+                                )}
+                                {lateOrders.map(o => (
+                                    <tr key={o.id}>
+                                        <td>{o.code}</td>
+                                        <td className="num">{o.lateMinutes}</td>
+                                        <td>
+                                            {o.worstWait
+                                                ? `Waited ${o.worstWait.minutes} min before step ${o.worstWait.step} on ${o.worstWait.machineCode} (machine busy or changeover)`
+                                                : 'Due date too tight vs release (no dominant wait)'}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h4 className="section-title">
+                        GA vs baseline
+                    </h4>
+                    <div className="table-wrap">
+                        <table className="table">
+                            <thead>
+                                <tr>
+                                    <th>Algorithm</th>
+                                    <th className="num">Makespan</th>
+                                    <th className="num">Late orders</th>
+                                    <th className="num">Tardiness</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                    <p style={{ fontSize: 11, color: '#888', marginTop: 8 }}>
-                        Baseline FIFO/EDD,
+                            </thead>
+                            <tbody>
+                                <tr className="row-strong">
+                                    <td>GA (this run)</td>
+                                    <td className="num">{k.makespan}</td>
+                                    <td className="num">{k.lateOrders}</td>
+                                    <td className="num">{k.totalTardiness}</td>
+                                </tr>
+                                {baselines.map(b => (
+                                    <tr key={b.name}>
+                                        <td>{BASELINE_NAME[b.name] || b.name}</td>
+                                        <td className="num">{b.kpis.makespanMinutes}</td>
+                                        <td className="num">{b.kpis.lateOrders}</td>
+                                        <td className="num">{b.kpis.totalLateMinutes}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p className="table-note">
+                        FIFO/EDD baselines dispatch whole orders block-wise (no interleaving of operations
+                        between orders) — weaker than true queue-based dispatching; label kept honest.
                     </p>
                 </>
             )}

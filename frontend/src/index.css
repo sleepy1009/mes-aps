@@ -54,8 +54,8 @@ body {
 .input:hover, .select:hover { border-color: #444; }
 .input:focus, .select:focus {
     outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.25);
+    border-color: var(--accent-3);
+    box-shadow: 0 0 0 2px rgba(21, 22, 22, 0.25);
 }
 .input.input-short { width: 100px; font-variant-numeric: tabular-nums; }
 
@@ -183,6 +183,8 @@ body {
     cursor: help;
 }
 .field-value { color: var(--fg-0); }
+.field-value-2 { color: var(--fg-0); font-size: 20px;}
+
 .input-group {
     flex: 1;
     display: flex;
@@ -390,3 +392,110 @@ body {
     font-family: var(--mono); font-size: 12px; padding: 2px 6px; white-space: nowrap;
     border: 1px solid var(--border); border-radius: var(--radius-s); background: #000; color: #ddd;
 }
+
+
+/* === Routing flow (order step chain) === */
+.routing-flow {
+    display: flex;
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: var(--pad-2) 0;
+}
+.routing-step {
+    min-width: 108px;
+    padding: 8px 10px;
+    border-radius: var(--radius-m);
+    border: 1px solid rgba(0, 0, 0, .35);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, .12);
+    text-align: center;
+    cursor: help;
+}
+.routing-step-num {
+    font-family: var(--Tektur);
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.1;
+}
+.routing-step-machine {
+    font-weight: 600;
+    font-size: 13px;
+    margin-top: 2px;
+}
+.routing-step-meta {
+    font-size: 11px;
+    opacity: .85;
+    font-variant-numeric: tabular-nums;
+}
+.routing-arrow {
+    align-self: center;
+    color: var(--fg-1);
+    opacity: .55;
+    font-size: 20px;
+    font-weight: 700;
+    padding: 0 2px;
+}
+
+
+/* === Custom scrollbar (theme: dark thumb + arrow buttons) === */
+:root {
+    --sb-size: 16px;
+    --sb-track: #cfcfcc;
+    --sb-thumb: #171717;
+    --sb-thumb-hover: #3a3a3a;
+    --sb-btn: #171717;
+    --sb-btn-hover: #444;
+}
+
+/* Chrome / Edge / Safari */
+*::-webkit-scrollbar { width: var(--sb-size); height: var(--sb-size); }
+*::-webkit-scrollbar-track { background: var(--sb-track); }
+*::-webkit-scrollbar-corner { background: var(--sb-track); }
+*::-webkit-scrollbar-thumb {
+    background: var(--sb-thumb);
+    border: 3px solid var(--sb-track);
+    border-radius: 8px;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--sb-thumb-hover); }
+
+*::-webkit-scrollbar-button:single-button {
+    display: block;
+    width: var(--sb-size);
+    height: var(--sb-size);
+    background-color: var(--sb-btn);
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 10px;
+}
+*::-webkit-scrollbar-button:single-button:hover { background-color: var(--sb-btn-hover); }
+*::-webkit-scrollbar-button:vertical:decrement {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M2 6.5 5 3.5 8 6.5' fill='none' stroke='%23ddd' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+*::-webkit-scrollbar-button:vertical:increment {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='%23ddd' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+*::-webkit-scrollbar-button:horizontal:decrement {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M6.5 2 3.5 5 6.5 8' fill='none' stroke='%23ddd' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+*::-webkit-scrollbar-button:horizontal:increment {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M3.5 2 6.5 5 3.5 8' fill='none' stroke='%23ddd' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+
+@supports (-moz-appearance: none) {
+    * { scrollbar-width: thin; scrollbar-color: var(--sb-thumb) var(--sb-track); }
+}
+
+/* === KPI panel theme sync === */
+.toolbar-spacer { flex: 1; }
+.field-value.bad { color: var(--danger); font-weight: 700; }
+.form-error { color: var(--danger); font-size: 13px; }
+.table-note { font-size: 11px; color: var(--fg-1); opacity: .75; margin: 6px 0 0; }
+.table tbody tr.row-strong td { font-weight: 700; }
+.ok-note { color: var(--success); }
+.util-bar {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    width: 100%; height: 10px; border-radius: 3px;
+}
+.util-fill { height: 100%; border-radius: 2px; background: var(--accent); }
+.util-fill.bottleneck { background: var(--warning); }

@@ -191,8 +191,8 @@ router.put('/dataset/job/:id', handle(async (req, res) => {
                 `UPDATE OrderOperations op
                  SET ProcessingTimeMinutes = CEIL(o.Quantity * r.CycleTimeMinutes)::INT
                  FROM Orders o
-                 JOIN RoutingSteps r ON r.ProductId = o.ProductId AND r.StepSequence = op.StepSequence
-                 WHERE op.OrderId = $1 AND o.Id = $1`, [jobId]);
+                 JOIN RoutingSteps r ON r.ProductId = o.ProductId
+                 WHERE op.OrderId = $1 AND o.Id = $1 AND r.StepSequence = op.StepSequence`, [jobId]);
         }
         // manual per-step overrides from the UI
         for (const op of operations) {

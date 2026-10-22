@@ -253,7 +253,8 @@ router.get('/runs/:id/kpis', handle(async (req, res) => {
     const minOf = (d) => Math.round((new Date(d) - planStart) / 60000);
     // history rows (TaskStatus 2) are pre-snapshot work: excluded from utilization, kept for order completion
     const { rows: tasks } = await pool.query(
-        'SELECT MachineId AS machine_id, SetupStartTime AS setup_start, EndTime AS end_time, SetupMinutes AS setup_minutes FROM Schedules WHERE RunId = $1 AND TaskStatus <> 2', [runId]);
+        'SELECT MachineId AS machine_id, SetupStartTime AS setup_start, StartTime AS start_time, EndTime AS end_time, SetupMinutes AS setup_minutes FROM Schedules WHERE RunId = $1 AND TaskStatus <> 2', [runId]);
+
     if (tasks.length === 0) return res.json({ runId, makespan: 0, otd: 1, machines: [], orders: [] });
     const horizon = Math.max(...tasks.map(t => minOf(t.end_time)));
     const { rows: downs } = await pool.query(
@@ -261,18 +262,23 @@ router.get('/runs/:id/kpis', handle(async (req, res) => {
         [planStart.toISOString(), new Date(planStart.getTime() + horizon * 60000).toISOString()]);
     const perMachine = new Map();
     for (const t of tasks) {
-        const e = perMachine.get(t.machine_id) || { busy: 0, setup: 0 };
-        e.busy += minOf(t.end_time) - minOf(t.setup_start);
-        e.setup += t.setup_minutes;
+        const e = perMachine.get(t.machine_id) || { cutting: 0, setup: 0, booked: 0 };
+        e.cutting += minOf(t.end_time) - minOf(t.start_time);      // spindle time only
+        e.setup   += t.setup_minutes;
+        e.booked  += minOf(t.end_time) - minOf(t.setup_start);     // includes wait-after-setup
         perMachine.set(t.machine_id, e);
     }
     const machines = [...perMachine.entries()].map(([id, e]) => {
         let unavail = 0;
         for (const d of downs) if (d.machine_id === id) unavail += Math.max(0, Math.min(minOf(d.e), horizon) - Math.max(minOf(d.s), 0));
         const available = horizon - unavail;
-        return { machineId: id, busyMinutes: e.busy, setupMinutes: e.setup, unavailableMinutes: unavail,
-                 utilization: available > 0 ? +(e.busy / available).toFixed(4) : null };
+        const running = e.cutting + e.setup;
+        return { machineId: id, cuttingMinutes: e.cutting, setupMinutes: e.setup, bookedMinutes: e.booked,
+                 unavailableMinutes: unavail,
+                 utilization: available > 0 ? +(running / available).toFixed(4) : null,          // true running
+                 bookedUtilization: available > 0 ? +(e.booked / available).toFixed(4) : null }; // machine held for the order
     });
+
     const bottleneck = machines.reduce((a, b) => ((b.utilization ?? -1) > (a.utilization ?? -1) ? b : a), machines[0]);
     const { rows: orderRows } = await pool.query(`
         WITH per_order AS (
@@ -288,7 +294,7 @@ router.get('/runs/:id/kpis', handle(async (req, res) => {
         if (tard > 0) { lateOrders++; totalTardiness += tard; }
         return { orderId: o.order_id, code: o.code, endMinutes: minOf(o.end_time), tardiness: tard };
     });
-    const totalBusy = machines.reduce((s, m) => s + m.busyMinutes, 0);
+    const totalRunning = machines.reduce((s, m) => s + m.cuttingMinutes + m.setupMinutes, 0);
     const totalSetup = machines.reduce((s, m) => s + m.setupMinutes, 0);
     const { rows: mRows } = await pool.query(
         'SELECT Id AS id, MachineCode AS code FROM Machines WHERE Id = ANY($1::int[])',
@@ -300,7 +306,7 @@ router.get('/runs/:id/kpis', handle(async (req, res) => {
         runId, planStart: runRows[0].plan_start, makespan: horizon,
         lateOrders, totalTardiness,
         otd: +((orders.length - lateOrders) / orders.length).toFixed(4),
-        setupRatio: totalBusy > 0 ? +(totalSetup / totalBusy).toFixed(4) : 0,
+        setupRatio: totalRunning > 0 ? +(totalSetup / totalRunning).toFixed(4) : 0,
         bottleneckMachineId: bottleneck.machineId,
         bottleneckCode: codeOf.get(bottleneck.machineId) || null,
         machines, orders

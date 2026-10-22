@@ -1,60 +1,109 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-const API_BASE = 'http://localhost:3000/api';
+import { taskColor, textColorOn, colorKeyOf } from '../utils/colors';
 
-const RoutingDiagram = () => {
-    const [products, setProducts] = useState([]);
-    const [selected, setSelected] = useState('');
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000/api';
+
+// Routing overview of ONE order. Step boxes use the exact colors of the Resource Gantt
+// (hue = order, lightness = step), so a box here IS the block on the chart.
+const RoutingDiagram = ({ refreshTrigger }) => {
+    const [info, setInfo] = useState(null);
+    const [selectedOrderId, setSelectedOrderId] = useState('');
 
     useEffect(() => {
-        axios.get(`${API_BASE}/products`)
+        axios.get(`${API_BASE}/dataset/info`)
             .then(res => {
-                setProducts(res.data);
-                if (res.data.length > 0) setSelected(res.data[0].code);
+                setInfo(res.data);
+                setSelectedOrderId(prev =>
+                    res.data.jobs.some(j => j.id.toString() === prev)
+                        ? prev
+                        : (res.data.jobs[0] ? res.data.jobs[0].id.toString() : '')
+                );
             })
             .catch(() => {});
-    }, []);
+    }, [refreshTrigger]);
 
-    const current = products.find(p => p.code === selected);
-    const routing = current ? [...(current.routing || [])].sort((a, b) => a.step - b.step) : [];
+    const job = useMemo(
+        () => (info ? info.jobs.find(j => j.id.toString() === selectedOrderId) || null : null),
+        [info, selectedOrderId]
+    );
+    const steps = useMemo(
+        () => (job ? [...job.operations].sort((a, b) => a.step - b.step) : []),
+        [job]
+    );
+
+    if (!info) return <div className="loading">Loading…</div>;
+    if (info.numJobs === 0) return <div className="empty">No orders yet. Import a CSV/Excel file first.</div>;
+
+    const bg = taskColor(colorKeyOf({ product_code: job.product_code }));
+
+    const fmtDue = (iso) => {
+        const d = new Date(iso);
+        if (isNaN(d)) return '';
+        const p = (n) => String(n).padStart(2, '0');
+        return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
 
     return (
-        <div className="quadrant" style={{ padding: 15, overflowY: 'auto' }}>
-            <p style={{ margin: '0 0 12px 0', fontSize: 13, color: '#666' }}>
-                explain...
-            </p>
-            <div style={{ marginBottom: 12 }}>
-                <label>Product: </label>
-                <select value={selected} onChange={e => setSelected(e.target.value)}
-                    style={{ padding: 6, borderRadius: 4, border: '1px solid #ccc' }}>
-                    {products.map(p => <option key={p.id} value={p.code}>{p.code} - {p.name} ({p.family_code})</option>)}
+        <div className="panel-root">
+            <div className="panel-toolbar">
+                <select
+                    className="select select-rich"
+                    value={selectedOrderId}
+                    onChange={(e) => setSelectedOrderId(e.target.value)}
+                    title="Select order"
+                >
+                    {info.jobs.map(j => (
+                        <option key={j.id} value={j.id}>
+                            {j.code} · {j.product_code} × {j.quantity} · due {fmtDue(j.due_date)}
+                        </option>
+                    ))}
                 </select>
             </div>
 
-            {current && (
-                <div style={{ padding: '10px 0' }}>
-                    <div style={{ fontSize: 14, marginBottom: 10 }}>
-                        <b>{current.code}</b> - {current.name} <span style={{ color: '#888' }}>(Family: {current.family_code})</span>
+            {job && (
+                <>
+                    <div className="form-stack">
+                        <div className="field-row">
+                            <span className="field-label">Product</span>
+                            <span className="field-value">
+                                <b>{job.product_code}</b> - {job.product_name || ''}
+                                <span className="pill">{job.family_code}</span>
+                            </span>
+                        </div>
+                        <div className="field-row">
+                            <span className="field-label" title="Sum of processing times of all steps of this order">
+                                Total time
+                            </span>
+                            <span className="field-value">
+                                {job.operations.reduce((s, op) => s + Number(op.time || 0), 0)} min
+                            </span>
+                        </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
-                        {routing.map((step, idx) => (
-                            <React.Fragment key={step.step}>
-                                <div style={{
-                                    background: '#3498db', color: '#fff', padding: '8px 12px', borderRadius: 6,
-                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)', minWidth: 100, textAlign: 'center'
-                                }}>
-                                    <div style={{ fontSize: 11, opacity: 0.8 }}>Step {step.step}</div>
-                                    <div style={{ fontWeight: 'bold', fontSize: 14 }}>{step.machine}</div>
-                                    <div style={{ fontSize: 11, marginTop: 2 }}>{step.cycle_time} min/sp</div>
+
+                    <h4 className="section-title">
+                        Routing
+                        <span className="hint"> (color = product, same as on the Resource Gantt)</span>
+                    </h4>
+                    <div className="routing-flow">
+                        {steps.map((op, idx) => (
+                            <React.Fragment key={op.step}>
+                                <div
+                                    className="routing-step"
+                                    style={{ background: bg, color: textColorOn(bg) }}
+                                    title={`Step ${op.step} on ${op.machine}: ${op.time} min for ${job.quantity} units (${op.cycle_time ?? '-'} min/unit)`}
+                                >
+                                    <div className="routing-step-num">{op.step}</div>
+                                    <div className="routing-step-machine">{op.machine}</div>
+                                    <div className="routing-step-meta">{op.time} min</div>
+                                    <div className="routing-step-meta">{op.cycle_time ?? '-'} min/unit</div>
                                 </div>
-                                {idx < routing.length - 1 && (
-                                    <div style={{ color: '#95a5a6', fontSize: 24, fontWeight: 'bold' }}>→</div>
-                                )}
+                                {idx < steps.length - 1 && <div className="routing-arrow">→</div>}
                             </React.Fragment>
                         ))}
+                        {steps.length === 0 && <div className="empty">This order has no routing steps.</div>}
                     </div>
-                    {routing.length === 0 && <div style={{ color: '#e74c3c' }}>Product dont have Routing.</div>}
-                </div>
+                </>
             )}
         </div>
     );

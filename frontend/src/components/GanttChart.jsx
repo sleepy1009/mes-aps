@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
+import { taskColor, textColorOn, colorKeyOf } from '../utils/colors';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 
@@ -15,6 +16,8 @@ const fmtFull = (baseMs, v) => {
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 const STATUS_LABEL = ['NEW', 'FIXED (resume)', 'HISTORY'];
+
+const DIM = { fill: '#d7dadb', stroke: '#c4c8ca', text: '#9aa0a3' };
 
 const GanttChart = ({ data, planStart, windows = [], orderDue = {}, snapshotMin = null }) => {
     const baseMs = planStart ? new Date(planStart).getTime() : Date.now();
@@ -60,7 +63,7 @@ const GanttChart = ({ data, planStart, windows = [], orderDue = {}, snapshotMin 
                 task.setupMinutes || 0,
                 task.status || 0
             ],
-            itemStyle: { color: `hsl(${(task.orderId * 40) % 360}, 70%, ${38 + Math.min(task.step, 6) * 7}%)` },
+            itemStyle: { color: taskColor(colorKeyOf(task)) },
             info: {
                 orderCode: task.orderCode, productCode: task.productCode,
                 machineCode: task.machineCode, machineName: task.machineName,
@@ -78,6 +81,35 @@ const GanttChart = ({ data, planStart, windows = [], orderDue = {}, snapshotMin 
         const horizonEnd = Math.max(1, ...data.map(t => t.endTime), ...winMinutes.map(w => w.endMin), snapshotMin || 0);
         return { categories, chartData, windowData, snapshotData, horizonEnd };
     }, [data, windows, orderDue, baseMs, snapshotMin]);
+
+
+    const chartRef = useRef(null);
+    const focusRef = useRef(null);          
+    const dataRef = useRef(chartData);
+    dataRef.current = chartData;
+    const rafRef = useRef(0);
+
+    const onEvents = useMemo(() => {
+        const setFocus = (orderId) => {
+            if (focusRef.current === orderId) return;
+            focusRef.current = orderId;
+            const chart = chartRef.current && chartRef.current.getEchartsInstance();
+            if (chart) chart.setOption({ series: [{ id: 'tasks', data: dataRef.current }] });
+        };
+        return {
+            mouseover: (p) => {
+                if (p.seriesId !== 'tasks') return;
+                cancelAnimationFrame(rafRef.current);
+                setFocus(p.value[5]);                       
+            },
+            mouseout: (p) => {
+                if (p.seriesId !== 'tasks') return;
+                cancelAnimationFrame(rafRef.current);
+                rafRef.current = requestAnimationFrame(() => setFocus(null));
+            }
+        };
+    }, []);
+
 
     const clip = (params, rect) => echarts.graphic.clipRectByRect(rect, {
         x: params.coordSys.x, y: params.coordSys.y,
@@ -99,6 +131,7 @@ const GanttChart = ({ data, planStart, windows = [], orderDue = {}, snapshotMin 
             ]
         };
     };
+
     const renderTask = (params, api) => {
         const cat = api.value(0);
         const start = api.coord([api.value(1), cat]);
@@ -107,8 +140,12 @@ const GanttChart = ({ data, planStart, windows = [], orderDue = {}, snapshotMin 
         const rect = clip(params, { x: start[0], y: start[1] - height / 2, width: end[0] - start[0], height });
         if (!rect) return;
         const style = api.style();
+        const baseFill = style.fill;                      
         const isLate = api.value(6) === 1;
         const st = api.value(8);
+        const focus = focusRef.current;
+        const dimmed = focus !== null && api.value(5) !== focus;
+
         if (st === 2) {                       // history: gray, muted
             style.fill = '#bdc3c7';
             style.opacity = 0.55;
@@ -122,17 +159,30 @@ const GanttChart = ({ data, planStart, windows = [], orderDue = {}, snapshotMin 
             style.stroke = isLate ? '#e74c3c' : '#222';
             style.lineWidth = isLate ? 3 : 1;
         }
-        const light = 38 + Math.min(api.value(3), 6) * 7;
+
+        if (dimmed) {                         // other
+            style.fill = DIM.fill;
+            style.stroke = DIM.stroke;
+            style.lineWidth = 1;
+            style.lineDash = null;
+            style.opacity = 0.5;
+        } else if (focus !== null) {          // select
+            style.opacity = 1;
+            style.shadowBlur = 8;
+            style.shadowColor = 'rgba(0,0,0,.35)';
+        }
+
         const children = [{ type: 'rect', transition: ['shape'], shape: rect, style }];
         if (rect.width >= 22 && st !== 2) {
             children.push({
                 type: 'text', x: rect.x + rect.width / 2, y: rect.y + rect.height / 2,
-                style: { text:  api.value(3), fill: light > 60 ? '#222' : '#fff',
-                         font: 'bold 10px sans-serif', align: 'center', verticalAlign: 'middle' }
+                style: { text: String(api.value(3)), fill: dimmed ? DIM.text : textColorOn(baseFill),
+                        font: 'bold 10px sans-serif', align: 'center', verticalAlign: 'middle' }
             });
         }
         return { type: 'group', children };
     };
+
     const renderSnapshot = (params, api) => {
         const x = api.coord([api.value(0), 0])[0];
         const top = params.coordSys.y;
@@ -143,7 +193,7 @@ const GanttChart = ({ data, planStart, windows = [], orderDue = {}, snapshotMin 
         };
     };
 
-    const option = {
+    const option = useMemo(() => ({
         /*
         title: {
             text: `Plan: ${fmtFull(baseMs, 0)}  →  ${fmtFull(baseMs, horizonEnd)}`,
@@ -192,19 +242,20 @@ const GanttChart = ({ data, planStart, windows = [], orderDue = {}, snapshotMin 
         },
         series: [
             { type: 'custom', renderItem: renderWindow, encode: { x: [1, 2], y: 0 }, data: windowData, z: 1 },
-            { type: 'custom', renderItem: renderTask, itemStyle: { opacity: 0.85 }, encode: { x: [1, 2], y: 0 }, data: chartData, z: 2 },
+            { id: 'tasks', type: 'custom', renderItem: renderTask, itemStyle: { opacity: 0.85 }, encode: { x: [1, 2], y: 0 }, data: chartData, z: 2 },
             { type: 'custom', renderItem: renderSnapshot, encode: { x: 0 }, data: snapshotData, silent: true, z: 3 }
         ]
-    };
+    }), [categories, chartData, windowData, snapshotData, horizonEnd, baseMs]); // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
         <div className="quadrant" style={{ gridColumn: 'span 2' }}>
             <h3 style={{ borderBottom: '1px solid #ddd', paddingBottom: '10px' }}>
                 Resource Gantt chart <span style={{ fontSize: 12, color: '#888' }}>
-                    (gray = HISTORY  ·  dashed line = FIXED  ·  red line = LATE  ·  grey block = PM/Breakdown  ·  number = STEP  ·  dashed red line = T)
+                    (hover = highlight order  ·  gray = HISTORY  ·  dashed line = FIXED  ·  red line = LATE  ·  grey block = PM/Breakdown  ·  number = STEP  ·  dashed red line = T)
                 </span>
             </h3>
-            <ReactECharts option={option} style={{ height: 'var(--gantt-body-h)', width: '100%'}} />
+            <ReactECharts ref={chartRef} option={option} onEvents={onEvents}
+              style={{ height: 'var(--gantt-body-h)', width: '100%' }} />
         </div>
     );
 };

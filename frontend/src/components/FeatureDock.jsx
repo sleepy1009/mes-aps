@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { togglePanel } from '../utils/panels';
 import '../dock.css';
 
@@ -8,16 +8,31 @@ const FeatureDock = ({ features, renderPanel, badges = {} }) => {
     const [open, setOpen] = useState([]);
     const [cols, setCols] = useState(1);
     const [justOpened, setJustOpened] = useState(null);
+    const [holdH, setHoldH] = useState(0);
+    const gridRef = useRef(null);
 
     const toggle = (id) => {
         const next = togglePanel(open, id, features);
-        setJustOpened(next.includes(id) && !open.includes(id) ? id : null);
+        const opening = next.includes(id) && !open.includes(id);
+        setJustOpened(opening ? id : null);
+        if (opening && gridRef.current) setHoldH(gridRef.current.offsetHeight);
         setOpen(next);
     };
+
+    useEffect(() => {
+        if (!holdH) return;
+        const t = setTimeout(() => setHoldH(0), 1200);
+        return () => clearTimeout(t);
+    }, [holdH]);
+
     useEffect(() => {
         if (!justOpened) return;
         const el = document.getElementById(`panel-${justOpened}`);
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        if (!el) return;
+        const top = el.getBoundingClientRect().top;
+        if (top < 110 || top > window.innerHeight * 0.6) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
     }, [justOpened]);
 
     const visible = features.filter((f) => open.includes(f.id));
@@ -52,7 +67,14 @@ const FeatureDock = ({ features, renderPanel, badges = {} }) => {
                     Select one feature to open table, button connect ⇄ for swap table, rest open single.
                 </div>
             ) : (
-                <div className="dock-grid" style={{ gridTemplateColumns: cols === 2 ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)' }}>
+                <div
+    ref={gridRef}
+    className="dock-grid"
+    style={{
+        gridTemplateColumns: cols === 2 ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)',
+        minHeight: holdH || undefined
+    }}
+>
                     {visible.map((f) => (
                         <section key={f.id} id={`panel-${f.id}`} className="dock-panel">
                             <div className="dock-panel-bar">

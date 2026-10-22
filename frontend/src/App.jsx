@@ -108,7 +108,7 @@ const AppInner = () => {
     const renderPanel = (id) => {
         switch (id) {
             case 'master': return <JobDetails refreshTrigger={refreshDataset} onDataChanged={handleRun} />;
-            case 'routing': return <RoutingDiagram />;
+            case 'routing': return <RoutingDiagram refreshTrigger={refreshDataset} />;
             case 'kpi': return <KpiPanel runId={meta.runId} baselines={meta.baselines} />;
             case 'compare': return <RunCompare refreshKey={runKey} />;
             case 'machines': return <MachinePanel onChanged={() => { loadDowntimes(); setRunKey(k => k + 1); }} />;
