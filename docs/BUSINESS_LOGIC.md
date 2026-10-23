@@ -43,6 +43,7 @@ Since the Genetic Algorithm (GA) must evaluate millions of iterations to find an
   3. The material availability time (`Release Time`).
 
 - **Downtime Constraints (Maintenance/Breakdowns):** The start time is postponed past any downtime windows as necessary to ensure that the actual machine occupancy interval does not overlap with any preventive maintenance (PM) or breakdown window.
+- **Setup and Processing Independence:** Setup and processing are placed independently by the decoder: each interval avoids downtime windows on its own, while the idle gap between setup-end and processing-start (machine set up, waiting for material) **may contain** a downtime window. This allows the optimizer to start changeover early without blocking the machine during maintenance.
 
 ### 2.3. Fitness Function
 
@@ -67,6 +68,8 @@ The system searches for a solution with the **lowest possible fitness score**:
 ---
 
 ## 3. KPI Metrics (React Frontend)
+
+All metrics below are computed by the backend endpoint `GET /api/runs/:id/kpis` straight from the `Schedules` table; the React panel only renders them. The stored report (`ScheduleRuns.Result`) also carries a legacy `machineUtilization` field (horizon-based, includes history rows on reschedule runs) — the UI does not read it; treat the endpoint as the single source of truth.
 
 The following metrics are used to evaluate scheduling performance in a standard MES context.
 

@@ -9,7 +9,7 @@
 
 mes-aps plans a factory floor the way a production planner needs it: import orders, run the optimizer, read a Gantt chart and a KPI panel, then re-plan when a machine breaks.
 
-It extends the classic Job Shop Scheduling Problem (JSSP) with real MES constraints: release and due dates, order priorities, product-family setup (changeover) times, machine efficiency, planned maintenance, breakdowns and rescheduling from a chosen time **T**. The optimizer is a **C++ Genetic Algorithm** with a greedy construction step, exposed to a **Node.js** backend through **N-API**, with a **React** front end.
+It extends the classic Job Shop Scheduling Problem (JSSP) with real MES constraints: release and due dates, order priorities, product-family setup (changeover) times, machine efficiency, planned maintenance, breakdowns and rescheduling from a chosen time **T**. The optimizer is a **C++ Genetic Algorithm** with an operation-based encoding and a greedy decoder, exposed to a **Node.js** backend through **N-API**, with a **React** front end.
 
 ## Key Features
 
@@ -49,7 +49,7 @@ See [BUSINESS_LOGIC.md](./docs/BUSINESS_LOGIC.md) for every formula with worked 
 
 ## Results
 
-Data for this result can see form: [data.js](frontend/src/utils/data.js)
+Data for this result can be reproduced from: [data.js](frontend/src/utils/data.js)
 
 | Scenario | Algorithm | Makespan (min) | Late orders | Total tardiness (min) |
 | :--- | :--- | ---: | ---: | ---: |
@@ -112,6 +112,7 @@ Ten black-box scenarios were run against the full stack.
   not a strawman-free comparison.
 * The model assumes continuous operation, with no shift calendar or operator constraints.
 * Planned: a bulk endpoint for saving machine efficiency, order status in the CSV export, a machine-load-over-time view.
+* Due dates are in the objective function, not just reporting. Changing one order's due date can reshape the entire schedule because the GA re-optimizes to minimize tardiness penalty. If you want due dates to be report-only, set all priority weights to 0 (not exposed in UI yet).
 
 
 ## Getting Started
