@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { fetchDatasetInfo, listDowntimes, addDowntime, deleteDowntime, updateMachineRate } from '../services/api';
+import { API_BASE, listDowntimes, addDowntime, deleteDowntime, updateMachineRate } from '../services/api';
 import { useToast } from '../ToastContext';
 import { fmtDateTime, fmtDuration } from '../utils/format';
 

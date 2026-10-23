@@ -3,7 +3,7 @@ import axios from 'axios';
 import * as XLSX from 'xlsx';
 import { useToast } from '../ToastContext';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000/api';
+import { API_BASE } from '../services/api';
 
 const toLocalInput = (iso) => {
     const d = new Date(iso);

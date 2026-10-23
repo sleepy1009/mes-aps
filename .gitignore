@@ -1,23 +1,38 @@
+# Dependencies
 node_modules/
+
+# Logs
 npm-debug.log
 yarn-error.log
 yarn-debug.log
 
+# Build artifacts
 aps-engine/build/
+frontend/dist/
+build/
+dist/
+
+# Compiled files
 *.node
 *.obj
 *.exe
 *.pdb
 
-frontend/dist/
-build/
-dist/
-*.csv
-aps-engine/benchmark_la_results.csv
+# Benchmark and test artifacts
+aps-engine/bench*
+aps-engine/test_rs*
 
+# Data files
+*.csv
+
+# Environment variables
 .env
 .env.local
 .env.development
 .env.production
+backend/.env
+frontend/.env
+
+# OS files
 .DS_Store
 Thumbs.db

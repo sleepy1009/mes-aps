@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { taskColor, textColorOn, colorKeyOf } from '../utils/colors';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000/api';
+import { API_BASE } from '../services/api';
 
 // Routing overview of ONE order. Step boxes use the exact colors of the Resource Gantt
 // (hue = order, lightness = step), so a box here IS the block on the chart.
