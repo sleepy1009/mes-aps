@@ -13,3 +13,4 @@ export const fetchRunKpis = async (runId) => (await axios.get(`${API_BASE}/runs/
 export const fetchRunResult = async (runId) => (await axios.get(`${API_BASE}/runs/${runId}/result`)).data;
 export const reschedule = async (payload) => (await axios.post(`${API_BASE}/schedule/reschedule`, payload)).data;
 export const listAudit = async () => (await axios.get(`${API_BASE}/audit`)).data;
+export const fetchDatasetInfo = async () => (await axios.get(`${API_BASE}/dataset/info`)).data;

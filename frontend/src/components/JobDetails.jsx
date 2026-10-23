@@ -185,7 +185,10 @@ const JobDetails = ({ refreshTrigger, onDataChanged }) => {
                                 value={qtyDraft}
                                 onChange={(e) => setQtyDraft(e.target.value)}
                             />
-                            <button className="btn btn-ghost" onClick={applyQuantity}>Save</button>
+                            <button className="btn btn-ghost" onClick={applyQuantity}
+                                title="Recompute the routing snapshot below from quantity x cycle time (local preview only)">
+                                Apply
+                            </button>
                         </div>
                     </div>
 

@@ -1,17 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import axios from 'axios';
-import { listRuns, fetchRunResult, reschedule } from '../services/api';
+import { fetchDatasetInfo, listRuns, fetchRunResult, reschedule } from '../services/api';
+import { useToast } from '../ToastContext';
 
-const API_BASE = 'http://localhost:3000/api';
 const toLocalInput = (iso) => {
     const d = new Date(iso);
     if (isNaN(d)) return '';
     const pad = (n) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
-const th = { padding: '6px', textAlign: 'left', borderBottom: '2px solid #ddd', background: '#ecf0f1' };
-const STATE_LABEL = { DONE: 'DONE', RUNNING: 'RUNNING', TODO: 'TODO' };
-const STATE_COLOR = { DONE: '#888', RUNNING: '#e67e22', TODO: '#27ae60' };
 
 const ReschedulePanel = ({ onRescheduled }) => {
     const [runs, setRuns] = useState([]);
@@ -21,7 +17,7 @@ const ReschedulePanel = ({ onRescheduled }) => {
     const [now, setNow] = useState('');
     const [breakdowns, setBreakdowns] = useState([]);
     const [busy, setBusy] = useState(false);
-    const [msg, setMsg] = useState(null);
+    const toast = useToast();
 
     const loadRuns = () => listRuns().then(r => {
         setRuns(r);
@@ -29,7 +25,7 @@ const ReschedulePanel = ({ onRescheduled }) => {
     });
     useEffect(() => {
         loadRuns();
-        axios.get(`${API_BASE}/dataset/info`).then(r => setMachines(r.data.machines)).catch(() => {});
+        fetchDatasetInfo().then(i => setMachines(i.machines)).catch(() => {});
     }, []);
     useEffect(() => {
         if (!baseRunId) { setBase(null); return; }
@@ -62,94 +58,121 @@ const ReschedulePanel = ({ onRescheduled }) => {
     }, [base, Tmin]);
 
     const submit = async () => {
-        if (!baseRunId || !now) { setMsg('ERR: Choose Base run and Time T'); return; }
-        setBusy(true); setMsg(null);
+        if (!baseRunId || !now) { toast({ kind: 'error', message: 'Choose base run and time T.' }); return; }
+        setBusy(true);
         try {
             const payload = await reschedule({
                 baseRunId: Number(baseRunId),
                 now: new Date(now).toISOString(),
-                breakdowns: breakdowns
-                    .filter(b => b.machineId !== '')
+                breakdowns: breakdowns.filter(b => b.machineId !== '')
                     .map(b => ({ machineId: Number(b.machineId), repairMinutes: Number(b.repairMinutes) }))
             });
-            setMsg(`OK: run #${payload.runId} (RESCHEDULE của #${baseRunId})`);
+            toast({ kind: 'success', message: `Run #${payload.runId} created (RESCHEDULE of #${baseRunId}).` });
             await loadRuns();
             if (onRescheduled) onRescheduled(payload);
         } catch (e) {
-            setMsg('ERR: ' + (e.response?.data?.message || e.message));
-        } finally {
-            setBusy(false);
-        }
+            toast({ kind: 'error', message: e.response?.data?.message || e.message });
+        } finally { setBusy(false); }
     };
 
-    const input = { padding: 4, border: '1px solid #ccc', borderRadius: 4 };
+    const patchBreakdown = (i, patch) =>
+        setBreakdowns(breakdowns.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+
     return (
-        <div className="quadrant" style={{ padding: 15, overflowY: 'auto' }}>
-            <p style={{ margin: '0 0 12px 0', fontSize: 13, color: '#666' }}>
-                explain...
-            </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 10 }}>
-                <label>Base run:
-                    <select value={baseRunId} onChange={e => setBaseRunId(e.target.value)} style={input}>
-                        {runs.map(r => (
-                            <option key={r.id} value={r.id}>
-                                Run #{r.id} {r.run_type === 'RESCHEDULE' ? `(RESCHEDULE ← #${r.parent_run_id})` : '(PLAN)'}
-                            </option>
-                        ))}
-                    </select>
-                </label>
-                <label>Time T:
-                    <input type="datetime-local" value={now} onChange={e => setNow(e.target.value)} style={input} />
-                </label>
-                <button onClick={() => setNow(base ? toLocalInput(base.planStart) : now)} style={input}>
-                    T = plan start
+        <div className="panel-root">
+            <div className="panel-toolbar">
+                <select className="select select-rich" value={baseRunId} title="Base run"
+                    onChange={e => setBaseRunId(e.target.value)}>
+                    {runs.map(r => (
+                        <option key={r.id} value={r.id}>
+                            Run #{r.id} {r.run_type === 'RESCHEDULE' ? `(RESCHEDULE ← #${r.parent_run_id})` : '(PLAN)'}
+                        </option>
+                    ))}
+                </select>
+                <button className="btn btn-primary" onClick={submit} disabled={busy}
+                    title="Re-optimize the remaining steps from time T">
+                    {busy ? 'Processing…' : 'Reschedule at T'}
                 </button>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
-                {breakdowns.map((b, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                        <select value={b.machineId} style={input}
-                            onChange={e => setBreakdowns(breakdowns.map((x, j) => j === i ? { ...x, machineId: e.target.value } : x))}>
-                            <option value=''>-- Breakdown --</option>
-                            {machines.map(m => <option key={m.id} value={m.id}>{m.code}</option>)}
-                        </select>
-                        <input type="number" min="1" value={b.repairMinutes} style={{ ...input, width: 70 }}
-                            onChange={e => setBreakdowns(breakdowns.map((x, j) => j === i ? { ...x, repairMinutes: e.target.value } : x))} />
-                        <span style={{ fontSize: 12 }}>min</span>
-                        <button onClick={() => setBreakdowns(breakdowns.filter((_, j) => j !== i))}
-                            style={{ color: '#e74c3c', background: 'none', border: 'none', cursor: 'pointer' }}>Delete</button>
+
+            <div className="form-stack">
+                <div className="field-row">
+                    <span className="field-label" title="Snapshot time T of the shop floor.">Time T</span>
+                    <div className="input-group">
+                        <input type="datetime-local" className="input" value={now}
+                            onChange={e => setNow(e.target.value)} />
+                        <button className="btn btn-ghost" title="Set T to the start of the base plan"
+                            onClick={() => setNow(base ? toLocalInput(base.planStart) : now)}>
+                            T = plan start
+                        </button>
                     </div>
-                ))}
-                <button onClick={() => setBreakdowns([...breakdowns, { machineId: '', repairMinutes: 60 }])} style={input}>
-                    + Breakdown
-                </button>
+                </div>
+
+                <div className="field-row is-top">
+                    <span className="field-label" title="Machines that are down at T. The repair time blocks the machine.">
+                        Breakdown
+                    </span>
+                    <div className="input-group is-col">
+                        {breakdowns.map((b, i) => (
+                            <div key={i} className="bd-item">
+                                <select className="select" value={b.machineId} title="Broken machine"
+                                    onChange={e => patchBreakdown(i, { machineId: e.target.value })}>
+                                    <option value=''>-- Machine --</option>
+                                    {machines.map(m => <option key={m.id} value={m.id}>{m.code}</option>)}
+                                </select>
+                                <input type="number" min="1" className="input input-short" value={b.repairMinutes}
+                                    title="Repair time (minutes)"
+                                    onChange={e => patchBreakdown(i, { repairMinutes: e.target.value })} />
+                                <span className="bd-unit">min</span>
+                                <button className="btn btn-danger" title="Remove"
+                                    onClick={() => setBreakdowns(breakdowns.filter((_, j) => j !== i))}>✕</button>
+                            </div>
+                        ))}
+                        <div className="bd-item">
+                            {breakdowns.length === 0 && <span className="date-display">No breakdown</span>}
+                            <button className="btn btn-ghost"
+                                onClick={() => setBreakdowns([...breakdowns, { machineId: '', repairMinutes: 60 }])}>
+                                + Add
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <p className="panel-desc" style={{ marginTop: 12 }}>
+                    Simulate the shop floor at time T: steps finished before T freeze as history; the step running at T
+                    resumes after repair without re-setup; everything else is re-optimized. Progress is derived from the
+                    base run (plan-adherence assumption).
+                </p>
             </div>
+
             {preview && (
-                <div style={{ marginBottom: 10, fontSize: 13 }}>
-                    T: <b>{preview.done}</b> Step done · <b>{preview.list.filter(x => x.state === 'RUNNING').length}</b> running · <b>{preview.list.filter(x => x.state === 'TODO').length}</b> not run yet
-                    <div style={{ maxHeight: 160, overflowY: 'auto', marginTop: 6 }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                            <thead><tr><th style={th}>Order (đơn)</th><th style={th}>Step</th><th style={th}>Machine</th><th style={th}>Status</th><th style={th}>Remaining - min</th></tr></thead>
+                <>
+                    <h4 className="section-title">
+                        State at T
+                        <span className="hint"> ({preview.done} done · {preview.list.filter(x => x.state === 'RUNNING').length} running · {preview.list.filter(x => x.state === 'TODO').length} not started)</span>
+                    </h4>
+                    <div className="table-wrap">
+                        <table className="table">
+                            <thead><tr>
+                                <th>Order</th><th className="num">Step</th><th>Machine</th>
+                                <th>Status</th><th className="num">Remaining (min)</th>
+                            </tr></thead>
                             <tbody>
                                 {preview.list.map(r => (
-                                    <tr key={r.key} style={{ borderBottom: '1px solid #eee' }}>
-                                        <td style={{ padding: 4 }}>{r.orderCode}</td>
-                                        <td style={{ padding: 4 }}>{r.step}</td>
-                                        <td style={{ padding: 4 }}>{r.machineCode}</td>
-                                        <td style={{ padding: 4, color: STATE_COLOR[r.state], fontWeight: 'bold' }}>{STATE_LABEL[r.state]}</td>
-                                        <td style={{ padding: 4 }}>{r.remaining}</td>
+                                    <tr key={r.key}>
+                                        <td>{r.orderCode}</td>
+                                        <td className="num">{r.step}</td>
+                                        <td>{r.machineCode}</td>
+                                        <td className={r.state === 'RUNNING' ? 'st-running' : 'st-todo'}>{r.state}</td>
+                                        <td className="num">{r.remaining}</td>
                                     </tr>
                                 ))}
+                                {preview.list.length === 0 && <tr><td colSpan={5} className="ok-note">Nothing left to run at T.</td></tr>}
                             </tbody>
                         </table>
                     </div>
-                </div>
+                </>
             )}
-            <button onClick={submit} disabled={busy}
-                style={{ padding: '8px 16px', background: busy ? '#95a5a6' : '#8e44ad', color: '#fff', border: 'none', borderRadius: 4, fontWeight: 'bold', cursor: busy ? 'default' : 'pointer' }}>
-                {busy ? 'Processing...' : 'Reschedule at T'}
-            </button>
-            {msg && <span style={{ marginLeft: 12, fontSize: 13, color: msg.startsWith('OK') ? '#27ae60' : '#e74c3c' }}>{msg}</span>}
         </div>
     );
 };

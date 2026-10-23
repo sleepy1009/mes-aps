@@ -26,8 +26,11 @@ const KpiPanel = ({ runId, baselines = [] }) => {
 
     const exportSchedule = () => {
         if (!result) return;
+        const lateByCode = new Map((result.orders || []).map(o => [o.code, o.lateMinutes || 0]));
         const rows = (result.data || []).map(t => ({
             'Order': t.orderCode, 'Product': t.productCode, 'Step': t.step, 'Machine': t.machineCode,
+            'Status': ['Plan', 'Fixed', 'History'][t.status || 0],
+            'Order late (min)': lateByCode.get(t.orderCode) || 0,
             'Status': ['Plan', 'Fixed', 'History'][t.status || 0],
             'Start setup': t.setupStartAt ? new Date(t.setupStartAt).toLocaleString() : '',
             'Start': t.startAt ? new Date(t.startAt).toLocaleString() : '',
@@ -86,7 +89,7 @@ const KpiPanel = ({ runId, baselines = [] }) => {
 
                     <h4 className="section-title">
                         Machine load
-                        <span className="hint"> (cutting = spindle time · booked = held incl. idle wait)</span>
+                        <span className="hint"> (cutting = spindle time · Finishes at = held incl. idle wait)</span>
                     </h4>
                     <div className="table-wrap">
                         <table className="table">
@@ -95,7 +98,7 @@ const KpiPanel = ({ runId, baselines = [] }) => {
                                     <th>Machine</th>
                                     <th className="num" title="Sum of (End - Start) per task">Cutting</th>
                                     <th className="num">Setup</th>
-                                    <th className="num" title="Setup + idle wait + cutting: machine held for orders">Booked</th>
+                                    <th className="num" title="Setup + idle wait + cutting: machine held for orders">Finishes at</th>
                                     <th className="num">Unavail.</th>
                                     <th title="(Cutting + Setup) / (makespan - unavailable)">Utilization</th>
                                 </tr>
@@ -154,7 +157,7 @@ const KpiPanel = ({ runId, baselines = [] }) => {
                     </div>
 
                     <h4 className="section-title">
-                        GA vs baseline
+                        GA vs baseline (for compare)
                     </h4>
                     <div className="table-wrap">
                         <table className="table">
@@ -168,7 +171,7 @@ const KpiPanel = ({ runId, baselines = [] }) => {
                             </thead>
                             <tbody>
                                 <tr className="row-strong">
-                                    <td>GA (this run)</td>
+                                    <td>GA (Genetic Algorithm) - core</td>
                                     <td className="num">{k.makespan}</td>
                                     <td className="num">{k.lateOrders}</td>
                                     <td className="num">{k.totalTardiness}</td>
@@ -184,10 +187,7 @@ const KpiPanel = ({ runId, baselines = [] }) => {
                             </tbody>
                         </table>
                     </div>
-                    <p className="table-note">
-                        FIFO/EDD baselines dispatch whole orders block-wise (no interleaving of operations
-                        between orders) — weaker than true queue-based dispatching; label kept honest.
-                    </p>
+                    
                 </>
             )}
         </div>

@@ -499,3 +499,117 @@ body {
 }
 .util-fill { height: 100%; border-radius: 2px; background: var(--accent); }
 .util-fill.bottleneck { background: var(--warning); }
+
+/* === shared status colors (Compare runs / Reschedule preview) === */
+.st-improved { color: var(--success); font-weight: 700; }
+.st-worsened { color: var(--danger); font-weight: 700; }
+.st-shifted  { color: var(--warning); font-weight: 700; }
+.st-same, .st-missing { color: var(--fg-1); opacity: .6; font-weight: 700; }
+.st-running { color: var(--warning); font-weight: 700; }
+.st-todo    { color: var(--success); font-weight: 700; }
+.panel-desc { margin: 0; font-size: 13px; color: var(--fg-1); opacity: .8; }
+.panel-toolbar .field-label { flex: 0 0 auto; }
+.row-clickable { cursor: pointer; }
+.payload-pre {
+    margin: 0 0 4px 0; padding: var(--pad-2);
+    background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius-s);
+    font-family: var(--mono); font-size: 11px; white-space: pre-wrap; word-break: break-all;
+}
+
+/* === Reschedule form rows === */
+.field-row.is-top { align-items: flex-start; }
+.field-row.is-top .field-label { padding-top: 8px; }
+.input-group.is-col { flex-direction: column; align-items: stretch; }
+.bd-item { display: flex; align-items: center; gap: var(--pad-2); }
+.bd-item .select { flex: 1; min-width: 0; }
+.bd-item .input-short { width: 80px; }
+.bd-unit { color: var(--fg-1); font-size: 13px; }
+
+.audit-reload-btn {
+    font-size: 16px;
+    font-family: var(--Tektur);
+}
+
+.audit-filter { max-width: 240px; }
+
+/* ==========================================================================
+   Additions for MachinePanel + RunCompare.
+   Append this whole block to the end of index.css.
+   Also remove the old ".panel-toolbar .field-label" rule ONLY if it breaks
+   other panels; RunCompare still relies on it (labels stay on one line).
+   ========================================================================== */
+
+/* === Shared small pieces === */
+.table td.empty-cell { text-align: center; color: var(--fg-1); opacity: .7; padding: var(--pad-4); }
+.table .dim { color: var(--fg-1); opacity: .45; }
+.btn-icon { padding: 2px 8px; }
+.tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border: 1px solid currentColor;
+    border-radius: 100px;
+    font-size: 11px;
+    font-weight: 700;
+}
+.tag-pm  { color: #2c6fb0; }
+.tag-brk { color: #c0392b; }
+
+/* Row notes that must not rely on color alone */
+.table tr.row-bad td { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.table tr.row-dirty td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
+
+/* === Machines: efficiency table with one Save in the header === */
+.table-wrap.is-compact { max-width: 560px; }
+.table th.th-action { text-align: right; }
+.table th.th-action .btn {
+    text-transform: none;   /* th is uppercase; keep the button readable */
+    letter-spacing: 0;
+    font-size: 13px;
+    padding: 4px 12px;
+}
+.rate-cell { display: flex; align-items: center; gap: var(--pad-3); }
+.rate-hint { font-size: 12px; color: var(--fg-1); opacity: .7; font-variant-numeric: tabular-nums; }
+.input.input-invalid { border-color: var(--danger); box-shadow: 0 0 0 2px rgba(231, 76, 60, .2); }
+
+.stale-note {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px;
+    border: 1px dashed var(--warning);
+    border-radius: var(--radius-m);
+    background: color-mix(in srgb, var(--warning) 12%, transparent);
+    font-size: 13px;
+}
+.stale-note kbd {
+    font-family: var(--mono); font-size: 12px;
+    padding: 1px 6px;
+    border: 1px solid var(--border); border-radius: var(--radius-s);
+    background: #000; color: #ddd;
+}
+
+/* === Field rows (Master data style) used by the downtime form === */
+.input.input-fill { flex: 1; min-width: 0; }
+.fr-hint {
+    margin-left: auto;
+    font-size: 12px; color: var(--fg-1); opacity: .75;
+    white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+
+/* === Run compare === */
+.panel-toolbar .swap { margin-left: 0; }   /* .btn-ghost pushes itself right with margin-left: auto */
+.cmp-stats { display: flex; flex-wrap: wrap; gap: var(--pad-3); }
+.cmp-stat {
+    display: flex; flex-direction: column; gap: 2px;
+    min-width: 190px;
+    padding: var(--pad-2) var(--pad-3);
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-m);
+}
+.cmp-stat-label {
+    font-family: var(--Tektur); font-size: 11px; font-weight: bold;
+    text-transform: uppercase; letter-spacing: .04em; color: var(--fg-1);
+}
+.cmp-stat-value { font-size: 15px; font-variant-numeric: tabular-nums; }
+.cmp-chips { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; }
+.cmp-toggles { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 13px; }
+.cmp-toggles label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
