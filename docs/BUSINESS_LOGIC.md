@@ -15,7 +15,7 @@ Since the Genetic Algorithm (GA) must evaluate millions of iterations to find an
 - **`setupLookup` (Dynamic 1D Setup Matrix):** Instead of using a three-dimensional nested vector to store product changeover times (`Machine × FromFamily × ToFamily`), the system dynamically allocates a single one-dimensional array.
 
   - **Formula:** `Index = (MachineID * TotalFamilies + FromFamily) * TotalFamilies + ToFamily`
-  - **Purpose:** Stores data in contiguous memory to maximize CPU cache hit rates and avoid memory fragmentation, enabling the GA to execute extremely quickly (under 200 ms).
+  - **Purpose:** Memory layout keeps the decode pass cheap: ~75–165 ms per run at benchmark settings (50×1000, LA01–LA20, local CPU). Production runs use a larger GA budget (100×3000): ~0.55 s per run on a local laptop and ~4.4 s on Render's shared free-tier CPU — the same binary, different hardware.
 
 ---
 
@@ -33,7 +33,7 @@ Since the Genetic Algorithm (GA) must evaluate millions of iterations to find an
 
   `Setup = matrix[machine][previous order family][current order family]`
 
-  *(Setup time is zero if the next operation belongs to the same product family or if the machine is idle.)*
+  *(Setup is zero only when the machine is idle or the previous order on that machine is the same order. Same family but different order still pays the within-family changeover, e.g. 5 min in the seed matrix.)*
 
 ### 2.2. Scheduling Constraints
 
@@ -137,7 +137,7 @@ When an unexpected event occurs, such as a machine breakdown, the shop floor res
 
 ### 4.4. Data Consistency Constraints
 
-- **Double-Scaling Prevention Flag:** When an in-progress operation (`RUNNING`) is reintroduced into the gene pool, its `Time` is set to the remaining chunk duration and accompanied by a flag that prevents the efficiency rate from being applied a second time.
+- **Double-Scaling Prevention Flag:** an operation that already has executed minutes (partial history) but whose remaining chunk has not started yet at T enters the gene pool with Time = chunk length and a flag that stops the efficiency rate from scaling it a second time. (A RUNNING operation never enters the gene pool: it is a fixed chunk.)
 
 - **Operation Sequence Integrity:** Completed operations must form a contiguous prefix of the sequence `1..k`. The fixed operation must be exactly operation `k+1`.
 
@@ -227,3 +227,14 @@ Two facts help when reading results.
 - **Load matters:** when machines are lightly loaded there are almost no queues, so the order of jobs barely matters and every method looks the same. The GA pays off under congestion: many orders released together, tight due dates, urgent orders arriving late, shared bottleneck machines.
 
 In Run #1 (congested), the GA finishes with 0 late orders while FIFO has 3 late orders (1331 min of tardiness) and EDD has 2 (262 min).
+
+The GA has no local-search stage (it is not a memetic/hybrid GA): on the Lawrence benchmarks it reaches best-known solutions on 16/20 of la01–la20 but keeps 0.1–1.2% gaps on the 10×10 instances. FIFO/EDD baselines dispatch whole orders block-wise — weaker than queue-based dispatching in real shops, and labeled as such wherever they appear.
+
+## 6. Simulation Assumptions
+- Three continuous shifts; no shift calendar — machines are unavailable only inside downtime windows.
+- Reschedule progress is derived from the stored plan at T (plan-adherence), not from real shop-floor feedback.
+- A resumed step does not repeat its setup; due dates never move during reschedule.
+- Processing times are nominal (ceil(qty × cycle)); efficiency scales processing only, never setup. Schedules store effective minutes; the two timelines never mix.
+- Import replaces the whole dataset (factory reset), including downtimes and rates. Runs are pruned to the 20 most recent.
+Single audit user (User_A); no authentication yet.
+- Timestamps are plant-local (Asia/Ho_Chi_Minh); the DB session timezone is pinned, which requires a direct Supabase connection (the transaction pooler drops session GUCs).

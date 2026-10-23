@@ -1,15 +1,9 @@
-<!--
-  DRAFT (initial). Finalize after deployment:
-  - fill the [TODO] links and environment variables
-  - refresh screenshots from the hosted version
-  - confirm the numbers marked [VERIFY]
--->
 
 # mes-aps: Advanced Planning & Scheduling for a Job Shop
 
 ![APS Dashboard](./docs/images/main-gantt-chart.png)
 
-**Live demo:** [Vercel URL] · **API:** [Render URL] · **Docs:** [System Metrics & Business Logic](./docs/BUSINESS_LOGIC.md)
+**Live demo:** https://mes-aps-rosy.vercel.app/ · **API:** https://mes-aps.onrender.com · **Docs:** [System Metrics & Business Logic](./docs/BUSINESS_LOGIC.md)
 
 ## Overview
 
@@ -28,17 +22,19 @@ It extends the classic Job Shop Scheduling Problem (JSSP) with real MES constrai
 * **GA vs FIFO / EDD:** every run is benchmarked against two classic dispatching rules.
 * **Audit log:** every action (import, update, run, reschedule) is recorded and filterable.
 
-## How It Works?
+## How It Works
 
-```
+<pre align="center">
 React (Vercel)  ──REST──▶  Node.js API (Render)  ──N-API worker──▶  C++ GA engine
                                    │
                                    ▼
                        PostgreSQL (Supabase)
-```
+</pre>
 
 * The C++ engine runs in a worker so a long optimization never blocks the Node.js event loop.
-* Routing and setup data use cache-friendly flat arrays (`opMatrix`, `setupLookup`), which keeps a run under 200 ms on the demo scenarios.
+* Routing and setup data use cache-friendly flat arrays (`opMatrix`, `setupLookup`).
+  Measured on the 12-order workshop dataset (GA 100 x 3000): ~0.55 s per run on a local laptop CPU and ~4.4 s on Render's shared free-tier CPU for the same input.
+  The timed section is the C++ worker alone; the gap is hardware, not code, and the hosted demo shows a loading skeleton while it runs.
 * The GA minimizes one score:
 
   ```
@@ -52,6 +48,8 @@ React (Vercel)  ──REST──▶  Node.js API (Render)  ──N-API worker─
 See [BUSINESS_LOGIC.md](./docs/BUSINESS_LOGIC.md) for every formula with worked examples.
 
 ## Results
+
+Data for this result can see form: [data.js](frontend/src/utils/data.js)
 
 | Scenario | Algorithm | Makespan (min) | Late orders | Total tardiness (min) |
 | :--- | :--- | ---: | ---: | ---: |
@@ -83,6 +81,9 @@ The GA's advantage appears under congestion (urgent orders arriving into a busy 
 
 Ten black-box scenarios were run against the full stack.
 
+<details>
+<summary>View all 10 test scenarios</summary>
+
 | ID | Scenario | Result |
 | :--- | :--- | :---: |
 | TC001 | Import validation (priority must be 1–3), template round-trip, master data export | Pass |
@@ -96,26 +97,36 @@ Ten black-box scenarios were run against the full stack.
 | TC009 | CSV export row count equals Gantt block count | Pass |
 | TC010 | Downtime validation (end after start), layout controls | Pass |
 
+</details>
+
 ## ⚠️ Limitations & Roadmap
 
 * **One machine per operation (JSSP, not FJSSP).** If a machine breaks, its steps wait for repair instead of moving to an alternative machine. Flexible job shop scheduling is the next step.
+* **The GA has no local search.** It is a plain GA (operation-based encoding + POX +
+  swap mutation + elitism), *not* a memetic/hybrid GA. On the Lawrence benchmarks it
+  reaches best-known solutions on 16/20 of la01-la20 (best of 50 seeded runs) but keeps
+  0.1-1.2% gaps on the 10x10 instances (la16-la20), where critical-path local search
+  would close them. First roadmap item.
+* **Baselines are order-block dispatchers.** FIFO/EDD here sequence whole orders
+  block-wise, weaker than queue-based dispatching in real shops: an honest lower bar,
+  not a strawman-free comparison.
 * The model assumes continuous operation, with no shift calendar or operator constraints.
 * Planned: a bulk endpoint for saving machine efficiency, order status in the CSV export, a machine-load-over-time view.
 
+
 ## Getting Started
+
+<details>
+<summary>View installation instructions</summary>
 
 ### Prerequisites
 
-Because the project compiles a native C++ addon for Node.js you need:
+- Node.js and npm
+- PostgreSQL 14+
+- C++ compiler supporting C++17 or later
+- Python 3.x for node-gyp
 
-* **Node.js** (v18+ recommended)
-* **PostgreSQL** (v14+)
-* **C++ compiler:** GCC/G++ (Linux/Mac) or Visual Studio Build Tools (Windows)
-* **Python 3.x** (required by `node-gyp`)
-
-### Installation
-
-**1. Build the core C++ engine (addon)**
+### 1. Build the C++ Engine
 
 ```bash
 cd aps-engine
@@ -123,13 +134,55 @@ npm install
 npm run build
 ```
 
-**2. Backend**: [install, `.env` variables, migrations, start command]
+### 2. Backend Setup
 
-**3. Frontend**: [install, `VITE_API_BASE`, dev and build commands]
+```bash
+cp backend/.env.example backend/.env
+npm install
+```
+
+Create the `mes_aps` database in PostgreSQL, then run:
+
+```bash
+psql -U postgres -d mes_aps -f docs/db/001_core.sql
+psql -U postgres -d mes_aps -f docs/db/002_seed_workshop.sql
+```
+
+Start the backend:
+
+```bash
+npm run dev -w backend
+```
+
+Backend health check: `http://localhost:3000/healthz`
+
+### 3. Frontend Setup
+
+```bash
+cp frontend/.env.example frontend/.env
+```
+
+Set `VITE_API_BASE=http://localhost:3000/api` in `frontend/.env`, then run:
+
+```bash
+npm run dev -w frontend
+```
+
+Build for production:
+
+```bash
+npm run build -w frontend
+```
+
+</details>
 
 ## ☁️ Deployment
 
-[Tafter hosting: Supabase (PostgreSQL), Render (backend, native addon build), Vercel (frontend), environment variables, CORS.]
+| Piece | Host | Notes |
+| :--- | :--- | :--- |
+| Frontend | Vercel | `VITE_API_BASE` baked at build time |
+| Backend | Render | build `npm install && npm run build -w aps-engine`; start `npm run start -w backend`; health check `/healthz` |
+| Database | Supabase (Singapore) | direct connection only: the session GUC `TimeZone` does not survive the transaction pooler |
 
 ---
 <div align="center">
