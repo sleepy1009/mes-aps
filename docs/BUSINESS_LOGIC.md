@@ -168,7 +168,7 @@ The example column uses a congested 10-order scenario (Run #1: 6 machines, 3 pri
 | :--- | :--- | :--- | :--- |
 | Processing time | `p = ceil(qty × cycle_time)` | Units × minutes per unit, rounded up. | 150 units × 0.8 min = 120 min |
 | Effective time | `p_eff = ceil(p / Rate)` | A slower machine takes longer. Setup is not scaled. | 100 min at Rate 0.8 becomes 125 min |
-| Setup | `matrix[machine][prev family][next family]` | Changeover cost, zero if the family does not change. | M_CUT: 135 min in total |
+| Setup | `matrix[machine][prev family][next family]` | Changeover time between product families. Zero only when the machine is idle or continues the same order; same family but a different order still pays a small changeover (5 min in the seed data). | M_CUT: 135 min in total |
 | Tardiness (per order) | `max(0, C − d)` | Minutes late. Early orders count as 0. | Finish 16:00, due 14:00 gives 120 min |
 | Late orders | `count(C > d)` | How many orders missed their due date. | 0 of 10 |
 | OTD | `(N − late) / N` | Share of orders delivered on time. | 10 / 10 = 100% |
@@ -239,5 +239,5 @@ The GA has no local-search stage (it is not a memetic/hybrid GA): on the Lawrenc
 - A resumed step does not repeat its setup; due dates never move during reschedule.
 - Processing times are nominal (ceil(qty × cycle)); efficiency scales processing only, never setup. Schedules store effective minutes; the two timelines never mix.
 - Import replaces the whole dataset (factory reset), including downtimes and rates. Runs are pruned to the 20 most recent.
-Single audit user (User_A); no authentication yet.
+- Single audit user (User_A); no authentication yet.
 - Timestamps are plant-local (Asia/Ho_Chi_Minh); the DB session timezone is pinned, which requires a direct Supabase connection (the transaction pooler drops session GUCs).

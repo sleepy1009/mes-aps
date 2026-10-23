@@ -5,6 +5,10 @@
 
 **Live demo:** https://mes-aps-rosy.vercel.app/ · **API:** https://mes-aps.onrender.com · **Docs:** [System Metrics & Business Logic](./docs/BUSINESS_LOGIC.md)
 
+- A factory has many orders and a few machines, and each order must visit machines in a fixed sequence.
+- Which order goes first on which machine decides who ends up late. 
+- That is the Job Shop Scheduling Problem (APS = Advanced Planning & Scheduling; MES = the shop-floor system it plugs into). mes-aps solves it and shows the result to a planner.
+
 ## Overview
 
 mes-aps plans a factory floor the way a production planner needs it: import orders, run the optimizer, read a Gantt chart and a KPI panel, then re-plan when a machine breaks.
