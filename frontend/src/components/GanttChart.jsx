@@ -19,6 +19,112 @@ const STATUS_LABEL = ['NEW', 'FIXED (resume)', 'HISTORY'];
 
 const DIM = { fill: '#d7dadb', stroke: '#c4c8ca', text: '#9aa0a3' };
 
+// Visual Legend Component
+const GanttLegend = () => (
+    <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '16px',
+        alignItems: 'center',
+        padding:'16px 0',
+        fontSize: '12px',
+        justifyContent: 'flex-end'
+    }}>
+        {/* HISTORY - gray muted block */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{
+                width: '32px',
+                height: '18px',
+                backgroundColor: '#bdc3c7',
+                opacity: 0.55,
+                border: '1px solid #95a5a6',
+                borderRadius: '2px'
+            }} />
+            <span>HISTORY</span>
+        </div>
+
+        {/* FIXED - dashed border */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{
+                width: '32px',
+                height: '18px',
+                backgroundColor: '#3498db',
+                border: '2px dashed #000',
+                borderRadius: '2px'
+            }} />
+            <span>FIXED</span>
+        </div>
+
+        {/* LATE - red border */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{
+                width: '32px',
+                height: '18px',
+                backgroundColor: '#3498db',
+                border: '3px solid #e74c3c',
+                borderRadius: '2px'
+            }} />
+            <span>LATE</span>
+        </div>
+
+        {/* PM/Breakdown - larger gray block */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{
+                width: '40px',
+                height: '22px',
+                backgroundColor: 'rgba(127,140,141,0.45)',
+                borderRadius: '2px',
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+            }}>
+                <span style={{ fontSize: '9px', color: '#444', fontWeight: 'bold' }}>PM</span>
+            </div>
+            <span>PM/Breakdown</span>
+        </div>
+
+        {/* Step number */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{
+                width: '32px',
+                height: '18px',
+                backgroundColor: '#3498db',
+                borderRadius: '2px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+                fontSize: '10px',
+                fontWeight: 'bold'
+            }}>
+                1
+            </div>
+            <span>Step i (1→n)</span>
+        </div>
+
+        {/* T line - dashed red vertical line */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{
+                width: '2px',
+                height: '22px',
+                backgroundColor: '#c0392b',
+                backgroundImage: 'repeating-linear-gradient(0deg, #c0392b, #c0392b 4px, transparent 4px, transparent 8px)'
+            }} />
+            <span>T</span>
+        </div>
+
+        {/* Hover hint */}
+        <div style={{ 
+            marginLeft: 'auto',
+            color: '#888',
+            fontStyle: 'italic'
+        }}>
+            Hover to highlight order and see step details
+        </div>
+    </div>
+);
+
 const GanttChart = ({ data, planStart, windows = [], orderDue = {}, snapshotMin = null }) => {
     const baseMs = planStart ? new Date(planStart).getTime() : Date.now();
 
@@ -194,12 +300,6 @@ const GanttChart = ({ data, planStart, windows = [], orderDue = {}, snapshotMin 
     };
 
     const option = useMemo(() => ({
-        /*
-        title: {
-            text: `Plan: ${fmtFull(baseMs, 0)}  →  ${fmtFull(baseMs, horizonEnd)}`,
-            left: 'center', top: 0, textStyle: { fontSize: 12, color: '#666' }
-        },
-        */
         tooltip: {
             formatter: (params) => {
                 const v = params.value;
@@ -247,16 +347,36 @@ const GanttChart = ({ data, planStart, windows = [], orderDue = {}, snapshotMin 
         ]
     }), [categories, chartData, windowData, snapshotData, horizonEnd, baseMs]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    
     return (
         <div className="quadrant" style={{ gridColumn: 'span 2' }}>
-            <h3 style={{ borderBottom: '1px solid #ddd', paddingBottom: '10px' }}>
-                Resource Gantt chart <span style={{ fontSize: 12, color: '#888' }}>
-                    (hover = highlight order  ·  gray = HISTORY  ·  dashed line = FIXED  ·  red line = LATE  ·  grey block = PM/Breakdown  ·  number = STEP  ·  dashed red line = T)
-                </span>
-            </h3>
-            <ReactECharts ref={chartRef} option={option} onEvents={onEvents}
-              style={{ height: 'var(--gantt-body-h)', width: '100%' }} />
+            <div
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    borderBottom: '1px solid #ddd',
+                    gap: '16px'
+                }}
+            >
+                <h2 style={{ margin: 0, flexShrink: 0 }}>
+                    Resource Gantt chart
+                </h2>
+
+                <GanttLegend />
+            </div>
+
+            <ReactECharts
+                ref={chartRef}
+                option={option}
+                onEvents={onEvents}
+                style={{
+                    height: 'var(--gantt-body-h)',
+                    width: '100%'
+                }}
+            />
         </div>
     );
+
 };
 export default GanttChart;
